@@ -8,8 +8,12 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, ACCESS_CODE } from "./firebase-config.js";
 
-const CATS = ["食品","日用品","衣類・繊維","家具・家電","工具・資材","本・メディア","植物・園芸","その他"];
-const UNITS = ["個","箱","kg袋","束","セット"];
+const KINDS = {
+  "ヒト": { emoji:"👤", label:"ヒト（人の手を借りたい・貸したい）", subcats:["見守り・声かけ","話し相手","送迎","付き添い","子どもの見守り","その他"] },
+  "モノ": { emoji:"📦", label:"モノ（物資を届けたい・受け取りたい）", subcats:["食料","日用品","衣類","家具・家電","その他"] },
+  "コト": { emoji:"🛠️", label:"コト（作業や活動を手伝いたい・頼みたい）", subcats:["力仕事","買い物代行","掃除・片付け","庭仕事","行事の手伝い","その他"] },
+};
+const KIND_KEYS = Object.keys(KINDS);
 
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
@@ -17,11 +21,12 @@ const db = getFirestore(fbApp);
 
 let state = {
   profile: null,
-  tab: 'register',
-  formType: 'want',
+  tab: 'top',
+  formMode: 'need',
+  formKind: 'ヒト',
   listings: [],
-  matches: [],
-  activeMatchId: null,
+  connections: [],
+  activeConnId: null,
   chatUnsub: null,
   chatMsgs: [],
   geoStatus: '',
@@ -40,14 +45,31 @@ function haversine(lat1,lon1,lat2,lon2){
   const a=Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
   return R * 2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
-function normItem(s){ return (s||'').trim().toLowerCase(); }
+function normText(s){ return (s||'').trim().toLowerCase(); }
 
-// ---------------- gate (login) ----------------
+function daysLeft(deadline){
+  if(!deadline) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const dl = new Date(deadline); dl.setHours(0,0,0,0);
+  return Math.round((dl - today) / 86400000);
+}
+function deadlineBadge(deadline){
+  const d = daysLeft(deadline);
+  if(d===null) return {cls:'calm', text:'期限なし'};
+  if(d < 0) return {cls:'calm', text:'期限終了'};
+  if(d === 0) return {cls:'urgent', text:'本日まで'};
+  if(d <= 2) return {cls:'urgent', text:`あと${d}日`};
+  if(d <= 7) return {cls:'soon', text:`あと${d}日`};
+  return {cls:'calm', text:`あと${d}日`};
+}
+
+// ---------------- gate ----------------
 function renderGate(errMsg){
   root.innerHTML = `
     <div class="gate">
-      <h1>モノマッチ</h1>
-      <p>実証実験に参加するには、表示名を入力してください。</p>
+      <div class="glow"></div>
+      <h1>ひらかたあったかクラウド</h1>
+      <p>地域の「困った」と「できること」をつなぐ、あったかい支援の掲示板です。表示名を入力して始めましょう。</p>
       ${ACCESS_CODE ? '<input id="gateCode" type="password" placeholder="合言葉">' : ''}
       <input id="gateName" type="text" placeholder="表示名（例：さとう農園）">
       <button id="gateBtn">はじめる</button>
@@ -70,87 +92,70 @@ async function onGateSubmit(){
   startApp();
 }
 
-// ---------------- boot ----------------
 onAuthStateChanged(auth, async (user) => {
   if(user){
     const snap = await getDoc(doc(db,'profiles',user.uid));
-    if(snap.exists()){
-      state.profile = snap.data();
-      startApp();
-    } else {
-      renderGate();
-    }
-  } else {
-    renderGate();
-  }
+    if(snap.exists()){ state.profile = snap.data(); startApp(); }
+    else { renderGate(); }
+  } else { renderGate(); }
 });
 
-function startApp(){
-  listenListings();
-  listenMatches();
-  render();
-}
+function startApp(){ listenListings(); listenConnections(); render(); }
 
-// ---------------- realtime listeners ----------------
 function listenListings(){
   const q = query(collection(db,'listings'), orderBy('createdAt','desc'));
-  onSnapshot(q, snap => {
-    state.listings = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    render();
-  });
+  onSnapshot(q, snap => { state.listings = snap.docs.map(d => ({ id:d.id, ...d.data() })); render(); });
 }
-function listenMatches(){
-  const q = query(collection(db,'matches'), orderBy('createdAt','desc'));
-  onSnapshot(q, snap => {
-    state.matches = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    render();
-  });
+function listenConnections(){
+  const q = query(collection(db,'connections'), orderBy('createdAt','desc'));
+  onSnapshot(q, snap => { state.connections = snap.docs.map(d => ({ id:d.id, ...d.data() })); render(); });
 }
-function listenChat(matchId){
+function listenChat(connId){
   if(state.chatUnsub) state.chatUnsub();
-  const q = query(collection(db,'matches',matchId,'messages'), orderBy('ts','asc'));
-  state.chatUnsub = onSnapshot(q, snap => {
-    state.chatMsgs = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    renderChatMessagesOnly();
-  });
+  const q = query(collection(db,'connections',connId,'messages'), orderBy('ts','asc'));
+  state.chatUnsub = onSnapshot(q, snap => { state.chatMsgs = snap.docs.map(d => ({ id:d.id, ...d.data() })); renderChatMessagesOnly(); });
 }
 
-// ---------------- data ops ----------------
 async function saveProfile(){ await setDoc(doc(db,'profiles',state.profile.id), state.profile); }
 
 async function createListing(listing){
   await setDoc(doc(db,'listings',listing.id), listing);
-  await runMatchingFor(listing);
+  await autoSuggestConnections(listing);
 }
 
-async function runMatchingFor(newListing){
-  const opposite = newListing.type === 'want' ? 'offer' : 'want';
-  const candidates = state.listings.filter(l => l.type===opposite && l.status==='open' && normItem(l.itemName)===normItem(newListing.itemName));
+// 同じヒト・モノ・コト＋サブカテゴリの相手がいれば、候補としてつながりを自動提案する
+async function autoSuggestConnections(newListing){
+  const opposite = newListing.mode === 'need' ? 'offer' : 'need';
+  const candidates = state.listings.filter(l => l.mode===opposite && l.status==='open'
+    && l.kind===newListing.kind && l.subcat===newListing.subcat);
   for(const c of candidates){
-    const wantL = newListing.type==='want' ? newListing : c;
-    const offerL = newListing.type==='offer' ? newListing : c;
-    const dup = state.matches.find(m => m.wantId===wantL.id && m.offerId===offerL.id);
-    if(dup) continue;
-    const dist = haversine(wantL.lat, wantL.lng, offerL.lat, offerL.lng);
-    const qtyOk = offerL.quantity >= wantL.quantity;
-    const match = {
-      id: uid(), wantId: wantL.id, offerId: offerL.id, itemName: wantL.itemName,
-      participants: [wantL.userId, offerL.userId],
-      distanceKm: dist, qtyOk, status: 'proposed', createdAt: Date.now(),
-    };
-    state.matches.push(match);
-    await setDoc(doc(db,'matches',match.id), match);
+    const needL = newListing.mode==='need' ? newListing : c;
+    const offerL = newListing.mode==='offer' ? newListing : c;
+    await proposeConnection(needL, offerL, 'system');
   }
 }
 
-async function deleteListing(id){
-  await deleteDoc(doc(db,'listings',id));
+async function proposeConnection(needL, offerL, connectedBy){
+  const dup = state.connections.find(m => m.needId===needL.id && m.offerId===offerL.id);
+  if(dup) return dup;
+  const dist = haversine(needL.lat, needL.lng, offerL.lat, offerL.lng);
+  const conn = {
+    id: uid(), needId: needL.id, offerId: offerL.id,
+    title: needL.title, kind: needL.kind,
+    participants: [needL.userId, offerL.userId],
+    distanceKm: dist, status: 'proposed', connectedBy, createdAt: Date.now(),
+  };
+  state.connections.push(conn);
+  await setDoc(doc(db,'connections',conn.id), conn);
+  return conn;
 }
 
+async function deleteListing(id){ await deleteDoc(doc(db,'listings',id)); }
+
 function myListings(){ return state.listings.filter(l=>l.userId===state.profile.id); }
-function myMatches(){
+function myConnections(){
   const myIds = new Set(myListings().map(l=>l.id));
-  return state.matches.filter(m=>myIds.has(m.wantId) || myIds.has(m.offerId));
+  return state.connections.filter(m=>myIds.has(m.needId) || myIds.has(m.offerId));
 }
 function listingById(id){ return state.listings.find(l=>l.id===id); }
 
@@ -160,11 +165,15 @@ function render(){
   const wrap = document.createElement('div'); wrap.className='app';
   wrap.appendChild(renderHeader());
   wrap.appendChild(renderTabs());
-  const panel = document.createElement('div'); panel.className='panel';
-  if(state.tab==='register') panel.appendChild(renderRegister());
-  else if(state.tab==='matching') panel.appendChild(renderMatching());
-  else if(state.tab==='chat') panel.appendChild(renderChatTab());
-  else if(state.tab==='admin') panel.appendChild(renderAdmin());
+  const panel = document.createElement('div');
+  if(state.tab==='top'){ panel.appendChild(renderTop()); }
+  else {
+    panel.className='panel';
+    if(state.tab==='register') panel.appendChild(renderRegister());
+    else if(state.tab==='connections') panel.appendChild(renderConnections());
+    else if(state.tab==='chat') panel.appendChild(renderChatTab());
+    else if(state.tab==='admin') panel.appendChild(renderAdmin());
+  }
   wrap.appendChild(panel);
   root.appendChild(wrap);
 }
@@ -172,11 +181,13 @@ function render(){
 function renderHeader(){
   const h = document.createElement('div'); h.className='masthead';
   h.innerHTML = `
-    <div class="brand">モノマッチ<small>ITEM MATCHING &amp; LOGISTICS BOARD — 実証実験版</small></div>
+    <div class="brand-row">
+      <div class="glow-badge"></div>
+      <div class="brand">ひらかたあったかクラウド<small>地域の支援マーケットプレイス</small></div>
+    </div>
     <div class="whoami">
       表示名: <b>${escapeHtml(state.profile.name)}</b><br>
-      拠点: ${state.profile.lat ? state.profile.lat.toFixed(3)+', '+state.profile.lng.toFixed(3) : '未設定'}
-      <br><button id="renameBtn">名前を変更</button>
+      <button id="renameBtn">名前を変更</button>
     </div>`;
   h.querySelector('#renameBtn').onclick = async () => {
     const n = prompt('表示名を入力してください', state.profile.name);
@@ -187,12 +198,13 @@ function renderHeader(){
 
 function renderTabs(){
   const wrap = document.createElement('div'); wrap.className='tabs';
-  const myM = myMatches().length;
+  const myC = myConnections().length;
   const tabs = [
-    {id:'register', label:'登録'},
-    {id:'matching', label:'マッチング', n: myM},
+    {id:'top', label:'TOP'},
+    {id:'register', label:'登録する'},
+    {id:'connections', label:'つながり', n: myC},
     {id:'chat', label:'チャット'},
-    {id:'admin', label:'管理画面'},
+    {id:'admin', label:'コーディネーター'},
   ];
   tabs.forEach(t=>{
     const el = document.createElement('div');
@@ -204,40 +216,130 @@ function renderTabs(){
   return wrap;
 }
 
+// ---- TOP: 今日の支援募集フィード ----
+function renderTop(){
+  const wrap = document.createElement('div');
+  const hero = document.createElement('div'); hero.className='hero';
+  hero.innerHTML = `
+    <h1>今日の支援募集</h1>
+    <p>地域のみんなの「困った」が集まっています。見て「これなら自分にもできそう」と思ったら、気軽に声をかけてみてください。マッチしなくても大丈夫、コーディネーターがつなぎ役になります。</p>
+    <div class="cta-row">
+      <button class="cta need" id="ctaNeed">困りごとを相談する</button>
+      <button class="cta offer" id="ctaOffer">できることを登録する</button>
+    </div>
+  `;
+  hero.querySelector('#ctaNeed').onclick = () => { state.formMode='need'; state.tab='register'; render(); };
+  hero.querySelector('#ctaOffer').onclick = () => { state.formMode='offer'; state.tab='register'; render(); };
+  wrap.appendChild(hero);
+
+  const feedTitle = document.createElement('div'); feedTitle.className='section-title';
+  feedTitle.innerHTML = `<span>募集中の困りごと</span><span class="rule"></span>`;
+  wrap.appendChild(feedTitle);
+
+  const feed = document.createElement('div'); feed.className='need-feed';
+  const needs = state.listings.filter(l=>l.mode==='need' && l.status==='open')
+    .slice()
+    .sort((a,b)=>{
+      const da = daysLeft(a.deadline), db_ = daysLeft(b.deadline);
+      const na = da===null ? Infinity : da, nb = db_===null ? Infinity : db_;
+      return na - nb;
+    });
+  if(needs.length===0){
+    feed.innerHTML = `<div class="empty">今はまだ困りごとの登録がありません。最初の一件を登録してみませんか？</div>`;
+  } else {
+    needs.forEach(n => feed.appendChild(renderNeedCard(n)));
+  }
+  wrap.appendChild(feed);
+  return wrap;
+}
+
+function renderNeedCard(n){
+  const el = document.createElement('div'); el.className='need-card';
+  const badge = deadlineBadge(n.deadline);
+  const kindInfo = KINDS[n.kind] || {emoji:'💡'};
+  const alreadyMine = n.userId === state.profile.id;
+  el.innerHTML = `
+    <div class="kind-glow">${kindInfo.emoji}</div>
+    <div class="top-row">
+      <div>
+        <h3>${escapeHtml(n.title)}</h3>
+        <div class="cat">${escapeHtml(n.kind)}・${escapeHtml(n.subcat)} ／ ${escapeHtml(n.userName)}さんより</div>
+      </div>
+      <span class="badge-deadline ${badge.cls}">${badge.text}</span>
+    </div>
+    ${n.note ? `<div class="note">${escapeHtml(n.note)}</div>` : ''}
+    <div class="meta-row">
+      <span>${n.lat ? '拠点登録あり' : '場所は未設定'}</span>
+    </div>
+  `;
+  const actionRow = document.createElement('div');
+  actionRow.style.marginTop = '12px';
+  const btn = document.createElement('button');
+  btn.className = 'help-btn';
+  btn.textContent = alreadyMine ? '自分の登録です' : '私にもできそう';
+  btn.disabled = alreadyMine;
+  btn.onclick = () => onOfferToHelp(n);
+  actionRow.appendChild(btn);
+  el.appendChild(actionRow);
+  return el;
+}
+
+async function onOfferToHelp(need){
+  if(!confirm(`「${need.title}」の支援に立候補しますか？\nこのあとチャットで詳しい相談ができます。`)) return;
+  // その場で簡易オファーを登録し、つながりを提案する
+  const offerListing = {
+    id: uid(), userId: state.profile.id, userName: state.profile.name, mode: 'offer',
+    kind: need.kind, subcat: need.subcat,
+    title: `「${need.title}」に対応します`,
+    note: '', lat: state.profile.lat, lng: state.profile.lng,
+    status: 'open', createdAt: Date.now(), quickOffer: true,
+  };
+  await setDoc(doc(db,'listings',offerListing.id), offerListing);
+  state.listings.unshift(offerListing);
+  const conn = await proposeConnection(need, offerListing, state.profile.id);
+  state.tab = 'chat'; state.activeConnId = conn.id;
+  render();
+}
+
 // ---- register ----
 function renderRegister(){
   const wrap = document.createElement('div');
+  const kindInfo = KINDS[state.formKind];
   wrap.innerHTML = `
-    <h2>物品を登録する</h2>
-    <p class="sub">WANT = 欲しいもの ／ OFFER = 提供できるもの</p>
+    <h2>登録する</h2>
+    <p class="sub">困っていること、できることを登録してください。「ヒト・モノ・コト」何でもOKです。</p>
     <div class="type-switch">
-      <div class="type-btn want ${state.formType==='want'?'active':''}" data-t="want">🔴 欲しい (WANT)</div>
-      <div class="type-btn offer ${state.formType==='offer'?'active':''}" data-t="offer">🟢 提供できる (OFFER)</div>
+      <div class="type-btn need ${state.formMode==='need'?'active':''}" data-t="need">😟 困っています<br>（支援してほしい）</div>
+      <div class="type-btn offer ${state.formMode==='offer'?'active':''}" data-t="offer">🙋 私にできること<br>（支援します）</div>
+    </div>
+    <div class="kind-switch">
+      ${KIND_KEYS.map(k => `<div class="kind-btn ${state.formKind===k?'active':''}" data-k="${k}">${KINDS[k].emoji} ${k}</div>`).join('')}
     </div>
     <form id="regForm">
-      <div class="grid2">
-        <div class="field"><label>品名</label><input name="itemName" required placeholder="例）段ボール箱"></div>
-        <div class="field"><label>カテゴリ</label><select name="category">${CATS.map(c=>`<option>${c}</option>`).join('')}</select></div>
+      <div class="field"><label>${state.formMode==='need' ? '困っていること' : 'できること'}（一言で）</label>
+        <input name="title" required placeholder="${state.formMode==='need' ? '例）重い荷物を運ぶのを手伝ってほしい' : '例）力仕事のお手伝いができます'}">
       </div>
       <div class="grid2">
-        <div class="field mono"><label>個数</label><input name="quantity" type="number" min="1" value="1" required></div>
-        <div class="field"><label>単位</label><select name="unit">${UNITS.map(u=>`<option>${u}</option>`).join('')}</select></div>
+        <div class="field"><label>カテゴリ</label>
+          <select name="subcat">${kindInfo.subcats.map(c=>`<option>${c}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>期限（任意）</label><input name="deadline" type="date"></div>
       </div>
-      <div class="field mono"><label>重量（合計・kg、任意）</label><input name="weightKg" type="number" min="0" step="0.1" placeholder="例）12.5"></div>
       <div class="loc-row">
-        <div class="field mono"><label>緯度</label><input name="lat" id="latInput" placeholder="例）35.658"></div>
-        <div class="field mono"><label>経度</label><input name="lng" id="lngInput" placeholder="例）139.701"></div>
+        <div class="field"><label>緯度</label><input name="lat" id="latInput" placeholder="例）35.658"></div>
+        <div class="field"><label>経度</label><input name="lng" id="lngInput" placeholder="例）139.701"></div>
         <button type="button" class="geo-btn" id="geoBtn">📍 現在地を取得</button>
       </div>
       <div class="geo-status" id="geoStatus">${state.geoStatus}</div>
-      <div class="field"><label>メモ（状態・受け渡し方法など）</label><textarea name="note" placeholder="例）平日夕方に駅前で受け渡し可能"></textarea></div>
-      <button type="submit" class="submit-btn ${state.formType}">${state.formType==='want' ? 'この内容で「欲しい」を登録' : 'この内容で「提供」を登録'}</button>
+      <div class="field"><label>詳細メモ</label><textarea name="note" placeholder="例）平日夕方に対応できる方を探しています"></textarea></div>
+      <button type="submit" class="submit-btn ${state.formMode}">${state.formMode==='need' ? 'この内容で相談する' : 'この内容で登録する'}</button>
     </form>
     <div class="section-title"><span>あなたの登録一覧</span><span class="rule"></span></div>
     <div id="myTags"></div>
   `;
 
-  wrap.querySelectorAll('.type-btn').forEach(b=>{ b.onclick = () => { state.formType = b.dataset.t; render(); }; });
+  wrap.querySelectorAll('.type-btn').forEach(b=>{ b.onclick = () => { state.formMode = b.dataset.t; render(); }; });
+  wrap.querySelectorAll('.kind-btn').forEach(b=>{ b.onclick = () => { state.formKind = b.dataset.k; render(); }; });
 
   const geoBtn = wrap.querySelector('#geoBtn');
   geoBtn.onclick = () => {
@@ -259,15 +361,16 @@ function renderRegister(){
     submitBtn.disabled = true;
     const f = new FormData(e.target);
     const listing = {
-      id: uid(), userId: state.profile.id, userName: state.profile.name, type: state.formType,
-      itemName: f.get('itemName').trim(), category: f.get('category'),
-      quantity: Number(f.get('quantity')) || 1, unit: f.get('unit'),
-      weightKg: f.get('weightKg') ? Number(f.get('weightKg')) : null,
+      id: uid(), userId: state.profile.id, userName: state.profile.name, mode: state.formMode,
+      kind: state.formKind, subcat: f.get('subcat'),
+      title: f.get('title').trim(),
+      deadline: f.get('deadline') || null,
       lat: f.get('lat') ? Number(f.get('lat')) : null, lng: f.get('lng') ? Number(f.get('lng')) : null,
       note: f.get('note').trim(), status: 'open', createdAt: Date.now(),
     };
     await createListing(listing);
     state.geoStatus = '';
+    state.tab = 'top';
     render();
   };
 
@@ -285,82 +388,83 @@ function renderRegister(){
 function setGeoStatus(wrap, msg){ state.geoStatus = msg; const el = wrap.querySelector('#geoStatus'); if(el) el.textContent = msg; }
 
 function renderTag(l){
-  const el = document.createElement('div'); el.className = 'tag ' + l.type;
+  const el = document.createElement('div'); el.className = 'tag ' + l.mode;
+  const kindInfo = KINDS[l.kind] || {emoji:'💡'};
+  const badge = l.mode==='need' ? deadlineBadge(l.deadline) : null;
   el.innerHTML = `
     <button class="del" title="削除">✕</button>
-    <span class="kind">${l.type==='want' ? 'WANT・欲しい' : 'OFFER・提供'}</span>
-    <h3>${escapeHtml(l.itemName)}</h3>
+    <div class="kind-glow">${kindInfo.emoji}</div>
+    <span class="kind">${l.mode==='need' ? '困っています' : 'できること'}</span>
+    <h3>${escapeHtml(l.title)}</h3>
     <div class="meta">
-      数量: ${l.quantity} ${escapeHtml(l.unit)}${l.weightKg ? ' ／ ' + l.weightKg + ' kg' : ''}<br>
-      分類: ${escapeHtml(l.category)}<br>
+      分類: ${escapeHtml(l.kind)}・${escapeHtml(l.subcat)}<br>
+      ${badge ? '期限: ' + badge.text + '<br>' : ''}
       座標: ${l.lat ? l.lat.toFixed(2)+', '+l.lng.toFixed(2) : '未設定'}
     </div>
-    <div class="who">by ${escapeHtml(l.userName)}</div>
     ${l.note ? `<div class="note">"${escapeHtml(l.note)}"</div>` : ''}
-    <div class="barcode"></div>
   `;
   el.querySelector('.del').onclick = async () => { if(confirm('この登録を削除しますか？')){ await deleteListing(l.id); } };
   return el;
 }
 
-// ---- matching ----
-function renderMatching(){
+// ---- connections ----
+function renderConnections(){
   const wrap = document.createElement('div');
-  wrap.innerHTML = `<h2>マッチング一覧</h2><p class="sub">距離が近い順に表示 ／ あなたの登録が関わるマッチのみ</p>`;
+  wrap.innerHTML = `<h2>つながり一覧</h2><p class="sub">同じカテゴリの相手が見つかると自動で提案されます。距離が近い順に表示（あなたの登録が関わるものだけ）</p>`;
   const list = document.createElement('div');
-  const mine = myMatches().slice().sort((a,b)=>(a.distanceKm??1e9)-(b.distanceKm??1e9));
+  const mine = myConnections().slice().sort((a,b)=>(a.distanceKm??1e9)-(b.distanceKm??1e9));
   if(mine.length===0){
-    list.innerHTML = `<div class="empty">まだマッチがありません。「登録」タブで欲しいもの・提供できるものを登録すると、同じ品名の相手が現れた時に自動でここに表示されます。</div>`;
+    list.innerHTML = `<div class="empty">まだつながりがありません。「登録する」から困りごと・できることを登録すると、同じカテゴリの相手が見つかった時に自動でここに表示されます。</div>`;
   } else {
-    mine.forEach(m => list.appendChild(renderMatchCard(m)));
+    mine.forEach(m => list.appendChild(renderConnCard(m)));
   }
   wrap.appendChild(list);
   return wrap;
 }
 
-function renderMatchCard(m){
-  const w = listingById(m.wantId), o = listingById(m.offerId);
-  const el = document.createElement('div'); el.className='match-card';
-  if(m.status==='confirmed'){ const st=document.createElement('div'); st.className='stamp'; st.textContent='MATCHED'; el.appendChild(st); }
-  if(!w || !o){ el.innerHTML = `<div class="empty">相手側のデータが削除されました</div>`; return el; }
-  const sideW = document.createElement('div'); sideW.className='side want';
-  sideW.innerHTML = `<span class="kind">WANT</span><h4>${escapeHtml(w.itemName)}</h4><div class="m">${w.quantity}${escapeHtml(w.unit)}${w.weightKg?' / '+w.weightKg+'kg':''}</div><div class="m">${escapeHtml(w.userName)}</div>`;
+function renderConnCard(m){
+  const n = listingById(m.needId), o = listingById(m.offerId);
+  const el = document.createElement('div'); el.className='conn-card';
+  if(m.status==='connected'){ const st=document.createElement('div'); st.className='stamp'; st.textContent='つながり成立'; el.appendChild(st); }
+  if(!n || !o){ el.innerHTML = `<div class="empty">相手側のデータが削除されました</div>`; return el; }
+  const sideN = document.createElement('div'); sideN.className='side need';
+  sideN.innerHTML = `<span class="kind">困っています</span><h4>${escapeHtml(n.title)}</h4><div class="m">${escapeHtml(n.userName)}</div>`;
   const mid = document.createElement('div'); mid.className='mid';
-  mid.innerHTML = `<div class="dist">${fmtDist(m.distanceKm)}</div><div>${m.qtyOk ? '数量OK' : '数量要確認'}</div>`;
+  mid.innerHTML = `<div class="dist">${fmtDist(m.distanceKm)}</div><div>${m.connectedBy==='system' ? '自動提案' : 'つないだ人あり'}</div>`;
   const sideO = document.createElement('div'); sideO.className='side offer';
-  sideO.innerHTML = `<span class="kind">OFFER</span><h4>${escapeHtml(o.itemName)}</h4><div class="m">${o.quantity}${escapeHtml(o.unit)}${o.weightKg?' / '+o.weightKg+'kg':''}</div><div class="m">${escapeHtml(o.userName)}</div>`;
-  const actions = document.createElement('div'); actions.className='match-actions';
+  sideO.innerHTML = `<span class="kind">できること</span><h4>${escapeHtml(o.title)}</h4><div class="m">${escapeHtml(o.userName)}</div>`;
+  const actions = document.createElement('div'); actions.className='conn-actions';
   const chatBtn = document.createElement('button'); chatBtn.className='btn-sm primary'; chatBtn.textContent='チャットする';
-  chatBtn.onclick = () => { state.tab='chat'; state.activeMatchId = m.id; render(); };
+  chatBtn.onclick = () => { state.tab='chat'; state.activeConnId = m.id; render(); };
   actions.appendChild(chatBtn);
-  if(m.status!=='confirmed'){
-    const confirmBtn = document.createElement('button'); confirmBtn.className='btn-sm'; confirmBtn.textContent='成立にする';
-    confirmBtn.onclick = async () => { await updateDoc(doc(db,'matches',m.id), {status:'confirmed'}); };
+  if(m.status!=='connected'){
+    const confirmBtn = document.createElement('button'); confirmBtn.className='btn-sm'; confirmBtn.textContent='つながり成立にする';
+    confirmBtn.onclick = async () => { await updateDoc(doc(db,'connections',m.id), {status:'connected'}); };
     actions.appendChild(confirmBtn);
   }
-  el.appendChild(sideW); el.appendChild(mid); el.appendChild(sideO); el.appendChild(actions);
+  el.appendChild(sideN); el.appendChild(mid); el.appendChild(sideO); el.appendChild(actions);
   return el;
 }
 
 // ---- chat ----
 function renderChatTab(){
   const wrap = document.createElement('div');
-  wrap.innerHTML = `<h2>チャット</h2><p class="sub">マッチしたお相手とリアルタイムでやり取りできます</p>`;
+  wrap.innerHTML = `<h2>チャット</h2><p class="sub">つながったお相手とリアルタイムでやり取りできます</p>`;
   const layout = document.createElement('div'); layout.className='chat-layout';
   const threads = document.createElement('div'); threads.className='chat-threads';
-  const mine = myMatches();
-  if(!state.activeMatchId && mine.length) state.activeMatchId = mine[0].id;
+  const mine = myConnections();
+  if(!state.activeConnId && mine.length) state.activeConnId = mine[0].id;
   if(mine.length===0){
-    threads.innerHTML = `<div class="empty">マッチが成立するとここにスレッドが表示されます。</div>`;
+    threads.innerHTML = `<div class="empty">つながりが成立するとここにスレッドが表示されます。</div>`;
   } else {
     mine.forEach(m => {
-      const w = listingById(m.wantId), o = listingById(m.offerId);
-      if(!w||!o) return;
-      const partnerName = w.userId===state.profile.id ? o.userName : w.userName;
+      const n = listingById(m.needId), o = listingById(m.offerId);
+      if(!n||!o) return;
+      const partnerName = n.userId===state.profile.id ? o.userName : n.userName;
       const item = document.createElement('div');
-      item.className = 'thread-item' + (m.id===state.activeMatchId ? ' active':'');
-      item.innerHTML = `<div class="t-title">${escapeHtml(partnerName)}</div><div class="t-sub">${escapeHtml(w.itemName)} ・ ${fmtDist(m.distanceKm)}</div>`;
-      item.onclick = () => { state.activeMatchId = m.id; render(); };
+      item.className = 'thread-item' + (m.id===state.activeConnId ? ' active':'');
+      item.innerHTML = `<div class="t-title">${escapeHtml(partnerName)}</div><div class="t-sub">${escapeHtml(n.title)}</div>`;
+      item.onclick = () => { state.activeConnId = m.id; render(); };
       threads.appendChild(item);
     });
   }
@@ -368,25 +472,28 @@ function renderChatTab(){
   layout.appendChild(threads); layout.appendChild(body);
   wrap.appendChild(layout);
 
-  if(state.activeMatchId){
-    body.innerHTML = `
-      <div class="chat-msgs" id="msgsEl"><div class="empty">読み込み中…</div></div>
-      <div class="chat-input">
-        <input type="text" id="chatText" placeholder="メッセージを入力…">
-        <button id="chatSend">送信</button>
-      </div>`;
-    listenChat(state.activeMatchId);
-    const send = async () => {
-      const inp = document.getElementById('chatText');
-      const text = inp.value.trim();
-      if(!text) return;
-      inp.value = '';
-      await addDoc(collection(db,'matches',state.activeMatchId,'messages'), {
-        senderId: state.profile.id, senderName: state.profile.name, text, ts: Date.now()
-      });
-    };
-    document.getElementById('chatSend').onclick = send;
-    document.getElementById('chatText').addEventListener('keydown', e => { if(e.key==='Enter') send(); });
+  if(state.activeConnId){
+    const m = state.connections.find(x=>x.id===state.activeConnId);
+    if(m){
+      body.innerHTML = `
+        <div class="chat-msgs" id="msgsEl"><div class="empty">読み込み中…</div></div>
+        <div class="chat-input">
+          <input type="text" id="chatText" placeholder="メッセージを入力…">
+          <button id="chatSend">送信</button>
+        </div>`;
+      listenChat(m.id);
+      const send = async () => {
+        const inp = document.getElementById('chatText');
+        const text = inp.value.trim();
+        if(!text) return;
+        inp.value = '';
+        await addDoc(collection(db,'connections',m.id,'messages'), {
+          senderId: state.profile.id, senderName: state.profile.name, text, ts: Date.now()
+        });
+      };
+      document.getElementById('chatSend').onclick = send;
+      document.getElementById('chatText').addEventListener('keydown', e => { if(e.key==='Enter') send(); });
+    }
   } else {
     body.innerHTML = `<div class="empty">左のスレッドを選択してください。</div>`;
   }
@@ -407,51 +514,79 @@ function renderChatMessagesOnly(){
   msgsEl.scrollTop = msgsEl.scrollHeight;
 }
 
-// ---- admin ----
+// ---- coordinator (admin) ----
 function renderAdmin(){
   const wrap = document.createElement('div');
-  const listings = state.listings, matches = state.matches;
-  const wantCount = listings.filter(l=>l.type==='want').length;
-  const offerCount = listings.filter(l=>l.type==='offer').length;
-  const confirmed = matches.filter(m=>m.status==='confirmed').length;
-  const rate = matches.length ? Math.round(confirmed/matches.length*100) : 0;
+  const listings = state.listings, conns = state.connections;
+  const needCount = listings.filter(l=>l.mode==='need').length;
+  const offerCount = listings.filter(l=>l.mode==='offer').length;
+  const connectedCount = conns.filter(m=>m.status==='connected').length;
+  const rate = conns.length ? Math.round(connectedCount/conns.length*100) : 0;
 
   wrap.innerHTML = `
-    <h2>管理画面（バックエンド）</h2>
-    <p class="sub">全参加者の登録・マッチングデータ一覧とレポート（Firestoreの実データ）</p>
+    <h2>コーディネーター画面</h2>
+    <p class="sub">全員の困りごと・できることを見渡して、手動でつなげることもできます</p>
     <div class="stat-row">
       <div class="stat"><div class="v">${listings.length}</div><div class="l">総登録数</div></div>
-      <div class="stat"><div class="v">${wantCount} / ${offerCount}</div><div class="l">欲しい / 提供</div></div>
-      <div class="stat"><div class="v">${matches.length}</div><div class="l">マッチ候補数</div></div>
-      <div class="stat"><div class="v">${rate}%</div><div class="l">成立率（${confirmed}件成立）</div></div>
+      <div class="stat"><div class="v">${needCount} / ${offerCount}</div><div class="l">困りごと / できること</div></div>
+      <div class="stat"><div class="v">${conns.length}</div><div class="l">つながり候補数</div></div>
+      <div class="stat"><div class="v">${rate}%</div><div class="l">成立率（${connectedCount}件）</div></div>
     </div>
-    <div class="section-title"><span>カテゴリ別登録件数</span><span class="rule"></span></div>
+
+    <div class="section-title"><span>手動でつなげる</span><span class="rule"></span></div>
+    <div class="connector-tool">
+      <div class="row">
+        <div class="field"><label>困りごとを選ぶ</label><select id="pickNeed"></select></div>
+        <div class="field"><label>できることを選ぶ</label><select id="pickOffer"></select></div>
+        <button id="connectBtn">つなげる</button>
+      </div>
+    </div>
+
+    <div class="section-title"><span>ヒト・モノ・コト別 登録件数</span><span class="rule"></span></div>
     <div class="bar-chart" id="barChart"></div>
+
     <div class="section-title"><span>登録データ一覧</span><span class="rule"></span><button class="export-btn" id="expListings">CSVエクスポート</button></div>
     <div class="table-wrap"><table class="ledger" id="listingTable"></table></div>
-    <div class="section-title"><span>マッチング一覧</span><span class="rule"></span><button class="export-btn" id="expMatches">CSVエクスポート</button></div>
-    <div class="table-wrap"><table class="ledger" id="matchTable"></table></div>
+
+    <div class="section-title"><span>つながり一覧</span><span class="rule"></span><button class="export-btn" id="expConns">CSVエクスポート</button></div>
+    <div class="table-wrap"><table class="ledger" id="connTable"></table></div>
   `;
 
-  const catCounts = {}; CATS.forEach(c=>catCounts[c]={want:0,offer:0});
-  listings.forEach(l=>{ if(!catCounts[l.category]) catCounts[l.category]={want:0,offer:0}; catCounts[l.category][l.type]++; });
-  const maxCount = Math.max(1, ...Object.values(catCounts).map(c=>c.want+c.offer));
+  // 手動連携ツール
+  const needOpts = listings.filter(l=>l.mode==='need' && l.status==='open');
+  const offerOpts = listings.filter(l=>l.mode==='offer' && l.status==='open');
+  const pickNeed = wrap.querySelector('#pickNeed');
+  const pickOffer = wrap.querySelector('#pickOffer');
+  pickNeed.innerHTML = needOpts.map(n=>`<option value="${n.id}">${escapeHtml(n.title)}（${escapeHtml(n.userName)}）</option>`).join('') || `<option value="">困りごとがありません</option>`;
+  pickOffer.innerHTML = offerOpts.map(o=>`<option value="${o.id}">${escapeHtml(o.title)}（${escapeHtml(o.userName)}）</option>`).join('') || `<option value="">できることがありません</option>`;
+  wrap.querySelector('#connectBtn').onclick = async () => {
+    const nId = pickNeed.value, oId = pickOffer.value;
+    if(!nId || !oId){ alert('困りごとと、できることの両方を選んでください'); return; }
+    const n = listingById(nId), o = listingById(oId);
+    await proposeConnection(n, o, 'coordinator');
+    alert('つなげました。「つながり」タブから確認できます。');
+    render();
+  };
+
+  const catCounts = {}; KIND_KEYS.forEach(k=>catCounts[k]={need:0,offer:0});
+  listings.forEach(l=>{ if(!catCounts[l.kind]) catCounts[l.kind]={need:0,offer:0}; catCounts[l.kind][l.mode]++; });
+  const maxCount = Math.max(1, ...Object.values(catCounts).map(c=>c.need+c.offer));
   const barChart = wrap.querySelector('#barChart');
-  Object.entries(catCounts).forEach(([cat,c])=>{
-    const total = c.want + c.offer;
+  Object.entries(catCounts).forEach(([k,c])=>{
+    const total = c.need + c.offer;
     const row = document.createElement('div'); row.className='bar-row';
-    row.innerHTML = `<div>${escapeHtml(cat)}</div><div class="bar-track"><div class="bar-fill" style="width:${total/maxCount*100}%"></div></div><div>${total}</div>`;
+    row.innerHTML = `<div>${KINDS[k]?KINDS[k].emoji:''} ${escapeHtml(k)}</div><div class="bar-track"><div class="bar-fill" style="width:${total/maxCount*100}%"></div></div><div>${total}</div>`;
     barChart.appendChild(row);
   });
 
-  wrap.querySelector('#listingTable').innerHTML = `<tr><th>種別</th><th>品名</th><th>カテゴリ</th><th>数量</th><th>重量</th><th>登録者</th><th>状態</th><th>登録日時</th></tr>` +
-    (listings.map(l => `<tr><td>${l.type==='want'?'WANT':'OFFER'}</td><td>${escapeHtml(l.itemName)}</td><td>${escapeHtml(l.category)}</td><td>${l.quantity}${escapeHtml(l.unit)}</td><td>${l.weightKg ?? '-'}</td><td>${escapeHtml(l.userName)}</td><td><span class="pill ${l.status}">${l.status==='open'?'募集中':'成立'}</span></td><td>${fmtTime(l.createdAt)}</td></tr>`).join('') || `<tr><td colspan="8">データがありません</td></tr>`);
+  wrap.querySelector('#listingTable').innerHTML = `<tr><th>種別</th><th>内容</th><th>分類</th><th>登録者</th><th>期限</th><th>状態</th><th>登録日時</th></tr>` +
+    (listings.map(l => `<tr><td>${l.mode==='need'?'困りごと':'できること'}</td><td>${escapeHtml(l.title)}</td><td>${escapeHtml(l.kind)}・${escapeHtml(l.subcat)}</td><td>${escapeHtml(l.userName)}</td><td>${l.deadline || '-'}</td><td><span class="pill ${l.status==='open'?'open':'connected'}">${l.status==='open'?'募集中':'成立'}</span></td><td>${fmtTime(l.createdAt)}</td></tr>`).join('') || `<tr><td colspan="7">データがありません</td></tr>`);
 
-  wrap.querySelector('#matchTable').innerHTML = `<tr><th>品名</th><th>WANT</th><th>OFFER</th><th>距離</th><th>数量適合</th><th>状態</th><th>作成日時</th></tr>` +
-    (matches.map(m => { const w=listingById(m.wantId), o=listingById(m.offerId); return `<tr><td>${escapeHtml(m.itemName)}</td><td>${w?escapeHtml(w.userName):'-'}</td><td>${o?escapeHtml(o.userName):'-'}</td><td>${fmtDist(m.distanceKm)}</td><td>${m.qtyOk?'OK':'要確認'}</td><td><span class="pill ${m.status==='confirmed'?'matched':'open'}">${m.status==='confirmed'?'成立':'提案中'}</span></td><td>${fmtTime(m.createdAt)}</td></tr>`; }).join('') || `<tr><td colspan="7">データがありません</td></tr>`);
+  wrap.querySelector('#connTable').innerHTML = `<tr><th>内容</th><th>困っている人</th><th>できる人</th><th>距離</th><th>つないだ人</th><th>状態</th><th>作成日時</th></tr>` +
+    (conns.map(m => { const n=listingById(m.needId), o=listingById(m.offerId); return `<tr><td>${escapeHtml(m.title)}</td><td>${n?escapeHtml(n.userName):'-'}</td><td>${o?escapeHtml(o.userName):'-'}</td><td>${fmtDist(m.distanceKm)}</td><td>${m.connectedBy==='system'?'自動':(m.connectedBy==='coordinator'?'コーディネーター':'本人')}</td><td><span class="pill ${m.status==='connected'?'connected':'open'}">${m.status==='connected'?'成立':'提案中'}</span></td><td>${fmtTime(m.createdAt)}</td></tr>`; }).join('') || `<tr><td colspan="7">データがありません</td></tr>`);
 
-  wrap.querySelector('#expListings').onclick = () => exportCsv(['type','itemName','category','quantity','unit','weightKg','userName','status','createdAt'], listings, 'listings.csv');
-  wrap.querySelector('#expMatches').onclick = () => exportCsv(['itemName','wantId','offerId','distanceKm','qtyOk','status','createdAt'], matches, 'matches.csv');
+  wrap.querySelector('#expListings').onclick = () => exportCsv(['mode','title','kind','subcat','userName','deadline','status','createdAt'], listings, 'listings.csv');
+  wrap.querySelector('#expConns').onclick = () => exportCsv(['title','needId','offerId','distanceKm','connectedBy','status','createdAt'], conns, 'connections.csv');
 
   return wrap;
 }
