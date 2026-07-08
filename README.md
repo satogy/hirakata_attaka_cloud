@@ -1,79 +1,50 @@
-# モノマッチ 実証実験版
+[README.md](https://github.com/user-attachments/files/29805942/README.md)
+# ひらかたあったかクラウド（リニューアル版）更新手順
 
-物品の「欲しい」「提供できる」を登録し、距離順に自動マッチング → チャットまで行える
-Webアプリです。GitHub Pages（フロント）+ Firebase（データベース・認証）だけで動くので、
-自前のサーバーは不要です。無料枠のみでOKな規模（10〜30人・数週間）を想定しています。
+すでに `satogy/monomatch-pilot` リポジトリと Firebase プロジェクトを作成済みなので、
+**新しく作り直す必要はありません**。中のファイルを今回のものに差し替えるだけでOKです。
 
-## 1. Firebase プロジェクトを作る（5分）
+## 変わったこと
 
-1. https://console.firebase.google.com/ にアクセスし、Googleアカウントでログイン
-2. 「プロジェクトを作成」→ 名前を入力（例：monomatch-pilot）→ 作成
-3. 左メニュー「Firestore Database」→「データベースの作成」
-   - ロケーションは `asia-northeast1`（東京）を推奨
-   - モードは「本番環境モード」でOK（ルールは後で上書きします）
-4. 左メニュー「Authentication」→「Sign-in method」→「匿名」を有効化
-5. 左メニュー「プロジェクトの設定」（歯車アイコン）→ 下にスクロールし
-   「マイアプリ」→ `</>`（ウェブ）アイコンをクリックしてアプリを登録
-   - アプリのニックネームは何でもOK（例：monomatch-web）
-   - 「Firebase Hosting も設定する」はチェックしなくてOK（GitHub Pagesを使うため）
-6. 表示された `firebaseConfig` の中身をコピーしておく
+- 名前：モノマッチ → **ひらかたあったかクラウド**
+- 「欲しい/提供」→ **「困っています」「私にできること」**（ヒト・モノ・コトの3分類）
+- 品名・個数・重量 → **支援内容（自由記述）・カテゴリ・期限**
+- TOPページ新設：期限が近い順の「今日の支援募集」フィード
+- 管理画面 → **コーディネーター画面**：自動マッチングに加えて、手動で「困りごと」と
+  「できること」を選んでつなげる機能を追加
+- データの入れ物：`listing`（同じ）／ `match` → **`connection`** に名称変更
 
-## 2. Firestore のルールを設定する
+## 更新手順（GitHub上の操作のみでOK）
 
-Firebaseコンソール →「Firestore Database」→「ルール」タブを開き、
-このリポジトリの `firestore.rules` の中身を貼り付けて「公開」をクリック。
+1. GitHubのリポジトリ（`satogy/monomatch-pilot`）を開く
+2. 以下の5ファイルを、それぞれ開いて中身を今回のものに丸ごと差し替える
+   （ファイル名をクリック →鉛筆アイコンで編集→ 全選択して削除 → 新しい内容を貼り付け → Commit）
+   - `index.html`
+   - `style.css`
+   - `app.js`
+   - `firestore.rules`
+   - `README.md`（このファイル、任意）
+3. `firebase-config.js` は **そのまま変更不要**です（プロジェクトの接続情報なので）
 
-## 3. 設定ファイルを作る
+## Firestoreのルールを更新する
 
-`firebase-config.sample.js` を `firebase-config.js` という名前でコピーし、
-手順1でコピーした値を貼り付けます。
+「つながり」の入れ物の名前が `match` → `connection` に変わったので、
+Firebaseコンソール →「Firestore Database」→「ルール」タブで、
+新しい `firestore.rules` の中身に貼り替えて「公開」してください。
 
-```bash
-cp firebase-config.sample.js firebase-config.js
-# firebase-config.js を開いて値を書き換える
-```
+## 前回のテストデータについて
 
-参加者だけがアクセスできるよう、`ACCESS_CODE` に簡単な合言葉を設定しておくと安心です
-（強固なセキュリティではありませんが、身内テストの誤アクセス防止には十分です）。
+前回「登録」タブなどで試しに登録したデータがあれば、データ構造が変わったため
+新しいTOP画面には表示されません（エラーにはなりません）。気になる場合は、
+Firebaseコンソール →「Firestore Database」→「データ」タブから
+`listings` と `matches` コレクションの中身を削除しておくときれいな状態で始められます。
 
-## 4. GitHub にアップロードして公開する
+## GitHub Pagesの反映
 
-すでに GitHub アカウント（satogy）をお持ちなので、次の手順で進められます。
+ファイルをコミットすると、数分後に自動で再ビルド・反映されます。
+`https://satogy.github.io/monomatch-pilot/` を開いて（反映されない場合は
+`Ctrl+Shift+R` で強制リロード）、TOP画面に「今日の支援募集」が表示されれば成功です。
 
-```bash
-# このフォルダの中身をそのまま新しいリポジトリにする場合
-git init
-git add .
-git commit -m "モノマッチ 実証実験版"
-git branch -M main
-git remote add origin https://github.com/satogy/monomatch-pilot.git
-git push -u origin main
-```
-
-その後 GitHub 上で：
-1. リポジトリの「Settings」→「Pages」を開く
-2. 「Source」を `main` ブランチ / `/(root)` に設定して保存
-3. 数分後、`https://satogy.github.io/monomatch-pilot/` で公開されます
-
-## 5. 参加者への案内
-
-公開されたURL（と合言葉を設定した場合はその合言葉）を参加者に共有するだけで、
-スマホ・PCのブラウザからそのまま使えます。アプリのインストールは不要です。
-
-## 6. 実験中〜実験後にできること
-
-- 「管理画面」タブから常に最新の登録・マッチングデータをその場で確認可能
-- 「CSVエクスポート」ボタンで登録一覧・マッチング一覧をダウンロードし、
-  Excel/スプレッドシートで詳細な分析が可能
-- Firebaseコンソールの「Firestore Database」からも生データを直接閲覧できます
-
-## 注意点（実証実験としての限界）
-
-- 匿名認証のみのため、ブラウザのデータを消すと再ログインが必要になります
-  （表示名を選び直すだけで再開できますが、過去の自分の登録とは紐付きません）
-
-  .
-- 小規模な検証用の構成です。本格運用する場合は認証方式の強化（メール認証等）や
-  マッチングロジックのサーバーサイド化（Cloud Functions）を検討してください
-- Firebase 無料枠（Sparkプラン）で今回の規模は十分ですが、想定より利用者が増える
-  場合は使用量をFirebaseコンソールで確認してください
+なお、URL中の `monomatch-pilot` の部分は今からでもリポジトリ名を変更すれば
+変えられます（Settings → General → Repository name）。今すぐ変えなくても
+動作に支障はないので、運用が落ち着いてから変更しても大丈夫です。
