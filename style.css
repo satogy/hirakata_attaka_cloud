@@ -1,152 +1,196 @@
 :root{
-  --bg:            #EDEAE0;
-  --bg-panel:      #F7F5EE;
-  --ink:           #23261F;
-  --ink-soft:      #5B5A4E;
-  --line:          #C9C4B2;
-  --want:          #A83E2C;
-  --want-soft:     #F1DCD3;
-  --offer:         #1F6F63;
-  --offer-soft:    #D9E7DE;
-  --match:         #C79A2E;
-  --match-soft:    #F3E6C4;
-  --paper-shadow:  rgba(35,38,31,0.14);
-  --radius: 3px;
-  font-family: "IBM Plex Sans JP", sans-serif;
+  --bg:            #FFF6EA;
+  --bg-panel:      #FFFFFF;
+  --ink:           #4A3728;
+  --ink-soft:      #8C7863;
+  --line:          #F0DCC0;
+
+  --need:          #D9622E;   /* 困っています（支援がほしい） */
+  --need-soft:     #FBE3D2;
+  --offer:         #3E8E68;   /* 私にできること（支援します） */
+  --offer-soft:    #DCEFE3;
+
+  --urgent:        #C1392B;   /* 期限が近い（1〜2日） */
+  --urgent-soft:   #FBDDD8;
+  --soon:          #D69A1E;   /* 期限が近い（3〜7日） */
+  --soon-soft:     #FBEBCB;
+  --calm:          #6E8B7A;   /* 期限に余裕 / なし */
+  --calm-soft:     #E4EEE8;
+
+  --radius: 14px;
+  --shadow: 0 3px 10px rgba(74,55,40,0.08);
+  font-family: "BIZ UDPGothic", sans-serif;
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);min-height:100vh;}
-.app{ max-width: 960px; margin: 0 auto; padding: 20px 16px 60px; }
+.app{ max-width: 980px; margin: 0 auto; padding: 20px 16px 70px; }
 
-/* ---------- gate (login) ---------- */
-.gate{ max-width:420px; margin:80px auto; background:var(--bg-panel); border:1px solid var(--line); border-radius:var(--radius); padding:28px; text-align:center; }
-.gate h1{ font-family:"Zen Kaku Gothic New"; font-size:24px; margin:0 0 6px;}
-.gate p{ font-size:13px; color:var(--ink-soft); margin-bottom:20px; }
-.gate input{ width:100%; padding:11px; border:1px solid var(--line); border-radius:var(--radius); font-size:15px; margin-bottom:12px; }
-.gate button{ width:100%; padding:12px; border:none; border-radius:var(--radius); background:var(--ink); color:var(--bg-panel); font-family:"Zen Kaku Gothic New"; font-weight:700; font-size:15px; cursor:pointer; }
-.gate .err{ color:var(--want); font-size:12px; margin-top:8px; min-height:16px; }
+/* ---------- gate ---------- */
+.gate{ max-width:420px; margin:70px auto; background:var(--bg-panel); border:1px solid var(--line); border-radius:20px; padding:32px 28px; text-align:center; box-shadow:var(--shadow); }
+.gate .glow{ width:56px; height:56px; margin:0 auto 14px; border-radius:50%; background:radial-gradient(circle at 35% 30%, #FFE7B8, var(--need) 85%); }
+.gate h1{ font-family:"Zen Maru Gothic"; font-weight:800; font-size:24px; margin:0 0 6px;}
+.gate p{ font-size:13px; color:var(--ink-soft); margin-bottom:20px; line-height:1.6; }
+.gate input{ width:100%; padding:12px; border:1.5px solid var(--line); border-radius:10px; font-size:15px; margin-bottom:12px; font-family:"BIZ UDPGothic"; }
+.gate button{ width:100%; padding:13px; border:none; border-radius:10px; background:var(--need); color:#fff; font-family:"Zen Maru Gothic"; font-weight:700; font-size:15px; cursor:pointer; }
+.gate button:hover{ filter:brightness(1.06); }
+.gate .err{ color:var(--urgent); font-size:12px; margin-top:8px; min-height:16px; }
 
 /* ---------- header ---------- */
-.masthead{ display:flex; align-items:flex-end; justify-content:space-between; border-bottom: 3px solid var(--ink); padding-bottom: 12px; margin-bottom: 18px; flex-wrap: wrap; gap:10px; }
-.masthead .brand{ font-family:"Zen Kaku Gothic New"; font-weight:900; font-size: 30px; letter-spacing: 0.03em; line-height:1; }
-.masthead .brand small{ display:block; font-family:"IBM Plex Mono"; font-weight:500; font-size:11px; letter-spacing:0.12em; color:var(--ink-soft); margin-top:5px; }
-.whoami{ font-family:"IBM Plex Mono"; font-size:12px; color:var(--ink-soft); text-align:right; }
-.whoami b{color:var(--ink); font-weight:600;}
-.whoami button{ margin-top:4px; font-family:"IBM Plex Mono"; font-size:11px; background:none; border:1px solid var(--line); color:var(--ink-soft); padding:3px 8px; border-radius:var(--radius); cursor:pointer; }
+.masthead{ display:flex; align-items:center; justify-content:space-between; padding-bottom: 16px; margin-bottom: 18px; flex-wrap: wrap; gap:10px; }
+.masthead .brand-row{ display:flex; align-items:center; gap:12px; }
+.masthead .glow-badge{ width:40px; height:40px; border-radius:50%; background:radial-gradient(circle at 35% 30%, #FFE7B8, var(--need) 85%); flex-shrink:0; }
+.masthead .brand{ font-family:"Zen Maru Gothic"; font-weight:800; font-size: 22px; line-height:1.2; }
+.masthead .brand small{ display:block; font-size:11px; font-weight:500; color:var(--ink-soft); margin-top:2px; }
+.whoami{ font-size:12px; color:var(--ink-soft); text-align:right; }
+.whoami b{color:var(--ink); font-weight:700;}
+.whoami button{ margin-top:4px; font-size:11px; background:none; border:1px solid var(--line); color:var(--ink-soft); padding:4px 9px; border-radius:8px; cursor:pointer; }
 .whoami button:hover{ border-color:var(--ink); color:var(--ink); }
 
 /* ---------- tabs ---------- */
-.tabs{ display:flex; gap:4px; margin-bottom: 20px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
-.tab{ font-family:"Zen Kaku Gothic New"; font-weight:700; font-size:14px; padding:9px 16px 8px; cursor:pointer; color:var(--ink-soft); border:1px solid transparent; border-bottom:none; border-radius: var(--radius) var(--radius) 0 0; position:relative; top:1px; display:flex; align-items:center; gap:6px; }
-.tab .n{ font-family:"IBM Plex Mono"; font-size:10px; background:var(--line); color:var(--bg-panel); border-radius:10px; padding:1px 6px; min-width:16px; text-align:center; }
-.tab.active{ color:var(--ink); background:var(--bg-panel); border-color:var(--line); border-bottom:1px solid var(--bg-panel); }
-.tab.active .n{ background:var(--match); color:var(--ink); }
-.tab:hover:not(.active){ color:var(--ink); }
+.tabs{ display:flex; gap:6px; margin-bottom: 18px; flex-wrap:wrap; }
+.tab{ font-family:"Zen Maru Gothic"; font-weight:700; font-size:13.5px; padding:9px 16px; cursor:pointer; color:var(--ink-soft); border-radius: 20px; display:flex; align-items:center; gap:6px; background:#fff; border:1.5px solid var(--line); }
+.tab .n{ font-size:10px; background:var(--need); color:#fff; border-radius:10px; padding:1px 6px; min-width:16px; text-align:center; }
+.tab.active{ color:#fff; background:var(--need); border-color:var(--need); }
+.tab.active .n{ background:rgba(255,255,255,0.3); }
+.tab:hover:not(.active){ border-color:var(--need); color:var(--need); }
 
-.panel{ background:var(--bg-panel); border:1px solid var(--line); border-radius: 0 var(--radius) var(--radius) var(--radius); padding:22px; box-shadow:0 2px 0 var(--paper-shadow); }
-.panel h2{ font-family:"Zen Kaku Gothic New"; font-size:18px; margin:0 0 4px; }
-.panel .sub{ font-family:"IBM Plex Mono"; font-size:11px; color:var(--ink-soft); margin:0 0 18px; letter-spacing:0.04em;}
+.panel{ background:var(--bg-panel); border:1px solid var(--line); border-radius: var(--radius); padding:24px; box-shadow:var(--shadow); }
+.panel h2{ font-family:"Zen Maru Gothic"; font-size:19px; margin:0 0 4px; }
+.panel .sub{ font-size:12px; color:var(--ink-soft); margin:0 0 18px; line-height:1.6;}
+
+/* ---------- TOP hero & feed ---------- */
+.hero{ background: linear-gradient(135deg, #FFE9C8 0%, #FFF6EA 60%); border:1px solid var(--line); border-radius: var(--radius); padding:26px 24px; margin-bottom:22px; box-shadow:var(--shadow); }
+.hero h1{ font-family:"Zen Maru Gothic"; font-weight:800; font-size:22px; margin:0 0 8px; }
+.hero p{ font-size:13px; color:var(--ink-soft); margin:0; line-height:1.7; max-width:520px; }
+.hero .cta-row{ margin-top:16px; display:flex; gap:10px; flex-wrap:wrap; }
+.hero .cta{ font-family:"Zen Maru Gothic"; font-weight:700; font-size:13px; padding:10px 18px; border-radius:20px; cursor:pointer; border:none; }
+.hero .cta.need{ background:var(--need); color:#fff; }
+.hero .cta.offer{ background:var(--offer); color:#fff; }
+
+.need-feed{ display:flex; flex-direction:column; gap:14px; }
+.need-card{ position:relative; background:#fff; border:1px solid var(--line); border-radius: var(--radius); padding:18px 18px 16px 66px; box-shadow:var(--shadow); }
+.need-card .kind-glow{ position:absolute; left:16px; top:18px; width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:18px; background:var(--need-soft); }
+.need-card .top-row{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap; }
+.need-card h3{ font-family:"Zen Maru Gothic"; font-size:16.5px; margin:0 0 5px; }
+.need-card .cat{ font-size:11.5px; color:var(--ink-soft); margin-bottom:6px; }
+.need-card .note{ font-size:12.5px; color:var(--ink-soft); margin-top:6px; line-height:1.6; }
+.need-card .meta-row{ display:flex; gap:10px; margin-top:10px; align-items:center; flex-wrap:wrap; font-size:11.5px; color:var(--ink-soft); }
+.badge-deadline{ font-family:"Zen Maru Gothic"; font-weight:700; font-size:12px; padding:4px 11px; border-radius:14px; white-space:nowrap; }
+.badge-deadline.urgent{ background:var(--urgent-soft); color:var(--urgent); }
+.badge-deadline.soon{ background:var(--soon-soft); color:var(--soon); }
+.badge-deadline.calm{ background:var(--calm-soft); color:var(--calm); }
+.help-btn{ font-family:"Zen Maru Gothic"; font-weight:700; font-size:12.5px; padding:9px 16px; border-radius:18px; border:none; background:var(--offer); color:#fff; cursor:pointer; white-space:nowrap; }
+.help-btn:hover{ filter:brightness(1.07); }
+.help-btn:disabled{ opacity:0.5; cursor:default; }
 
 /* ---------- form ---------- */
 .type-switch{ display:flex; gap:8px; margin-bottom:18px; }
-.type-btn{ flex:1; font-family:"Zen Kaku Gothic New"; font-weight:700; font-size:14px; padding:12px; border-radius:var(--radius); cursor:pointer; text-align:center; border:2px solid var(--line); background:#fff; color:var(--ink-soft); }
-.type-btn.want.active{ border-color:var(--want); background:var(--want-soft); color:var(--want); }
+.type-btn{ flex:1; font-family:"Zen Maru Gothic"; font-weight:700; font-size:13.5px; padding:13px 8px; border-radius:14px; cursor:pointer; text-align:center; border:2px solid var(--line); background:#fff; color:var(--ink-soft); line-height:1.4; }
+.type-btn.need.active{ border-color:var(--need); background:var(--need-soft); color:var(--need); }
 .type-btn.offer.active{ border-color:var(--offer); background:var(--offer-soft); color:var(--offer); }
 
+.kind-switch{ display:flex; gap:8px; margin-bottom:16px; }
+.kind-btn{ flex:1; font-size:13px; padding:10px 6px; border-radius:12px; cursor:pointer; text-align:center; border:1.5px solid var(--line); background:#fff; color:var(--ink-soft); }
+.kind-btn.active{ border-color:var(--ink); background:var(--ink); color:#fff; }
+
 .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-.field{ margin-bottom:12px; }
-.field label{ display:block; font-size:12px; color:var(--ink-soft); margin-bottom:4px; font-weight:500;}
-.field input, .field select, .field textarea{ width:100%; font-family:"IBM Plex Sans JP"; font-size:14px; padding:9px 10px; border:1px solid var(--line); border-radius:var(--radius); background:#fff; color:var(--ink); }
-.field textarea{ resize:vertical; min-height:56px; }
-.field.mono input{ font-family:"IBM Plex Mono"; }
+.field{ margin-bottom:14px; }
+.field label{ display:block; font-size:12.5px; color:var(--ink-soft); margin-bottom:5px; font-weight:700;}
+.field input, .field select, .field textarea{ width:100%; font-family:"BIZ UDPGothic"; font-size:14px; padding:10px 11px; border:1.5px solid var(--line); border-radius:10px; background:#fff; color:var(--ink); }
+.field textarea{ resize:vertical; min-height:64px; }
 .loc-row{ display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
 .loc-row .field{ flex:1; margin-bottom:0; min-width:120px; }
-.geo-btn{ font-family:"IBM Plex Mono"; font-size:12px; white-space:nowrap; padding:9px 12px; border:1px solid var(--ink); background:var(--ink); color:var(--bg-panel); border-radius:var(--radius); cursor:pointer; margin-bottom:0; height:38px; }
+.geo-btn{ font-size:12.5px; white-space:nowrap; padding:10px 14px; border:none; background:var(--ink); color:#fff; border-radius:10px; cursor:pointer; height:41px; font-family:"Zen Maru Gothic"; font-weight:700; }
 .geo-btn:hover{ opacity:0.85; }
-.geo-status{ font-family:"IBM Plex Mono"; font-size:11px; color:var(--offer); margin:8px 0 12px; min-height:14px;}
+.geo-status{ font-size:11.5px; color:var(--offer); margin:8px 0 12px; min-height:14px;}
 
-.submit-btn{ font-family:"Zen Kaku Gothic New"; font-weight:700; font-size:15px; padding:12px 22px; border:none; border-radius:var(--radius); cursor:pointer; color:#fff; letter-spacing:0.02em; }
-.submit-btn.want{ background:var(--want); }
+.submit-btn{ font-family:"Zen Maru Gothic"; font-weight:700; font-size:15px; padding:13px 24px; border:none; border-radius:22px; cursor:pointer; color:#fff; }
+.submit-btn.need{ background:var(--need); }
 .submit-btn.offer{ background:var(--offer); }
 .submit-btn:hover{ filter:brightness(1.08); }
 .submit-btn:disabled{ opacity:0.5; cursor:not-allowed; }
 
-/* ---------- cargo tag card ---------- */
-.tag-list{ display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:16px; margin-top:18px; }
-.tag{ position:relative; background:#fff; border:1.5px dashed var(--line); border-radius:6px; padding:14px 14px 10px; overflow:hidden; }
-.tag::before{ content:""; position:absolute; top:-8px; left:16px; width:16px; height:16px; background:var(--bg); border:1.5px dashed var(--line); border-radius:50%; }
-.tag.want{ border-color:var(--want); }
-.tag.offer{ border-color:var(--offer); }
-.tag .kind{ display:inline-block; font-family:"IBM Plex Mono"; font-size:10px; font-weight:600; letter-spacing:0.08em; padding:2px 7px; border-radius:2px; margin-bottom:8px; }
-.tag.want .kind{ background:var(--want-soft); color:var(--want); }
+/* ---------- listing tag list (own registrations) ---------- */
+.tag-list{ display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px; margin-top:16px; }
+.tag{ position:relative; background:#fff; border:1px solid var(--line); border-radius: var(--radius); padding:16px 14px 12px 54px; box-shadow:var(--shadow); }
+.tag .kind-glow{ position:absolute; left:12px; top:14px; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:14px; }
+.tag.need .kind-glow{ background:var(--need-soft); }
+.tag.offer .kind-glow{ background:var(--offer-soft); }
+.tag .kind{ display:inline-block; font-family:"Zen Maru Gothic"; font-weight:700; font-size:10.5px; letter-spacing:0.02em; padding:2px 8px; border-radius:10px; margin-bottom:7px; }
+.tag.need .kind{ background:var(--need-soft); color:var(--need); }
 .tag.offer .kind{ background:var(--offer-soft); color:var(--offer); }
-.tag h3{ font-family:"Zen Kaku Gothic New"; font-size:17px; margin:0 0 6px; }
-.tag .meta{ font-family:"IBM Plex Mono"; font-size:12px; color:var(--ink-soft); line-height:1.7; }
-.tag .who{ font-size:12px; color:var(--ink-soft); margin-top:6px; }
-.tag .note{ font-size:12px; color:var(--ink-soft); margin-top:6px; font-style:italic; }
-.tag .barcode{ margin-top:10px; height:14px; background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 4px, var(--ink) 4px 5px, transparent 5px 9px); opacity:0.55; }
-.tag .del{ position:absolute; top:10px; right:10px; font-family:"IBM Plex Mono"; font-size:10px; color:var(--ink-soft); background:none; border:1px solid var(--line); border-radius:2px; padding:2px 6px; cursor:pointer; }
-.empty{ font-family:"IBM Plex Mono"; font-size:12px; color:var(--ink-soft); padding:20px 0; text-align:center; border:1px dashed var(--line); border-radius:var(--radius); }
+.tag h3{ font-family:"Zen Maru Gothic"; font-size:15.5px; margin:0 0 5px; }
+.tag .meta{ font-size:11.5px; color:var(--ink-soft); line-height:1.7; }
+.tag .note{ font-size:11.5px; color:var(--ink-soft); margin-top:5px; font-style:italic; }
+.tag .del{ position:absolute; top:12px; right:12px; font-size:10px; color:var(--ink-soft); background:none; border:1px solid var(--line); border-radius:8px; padding:2px 7px; cursor:pointer; }
+.empty{ font-size:12.5px; color:var(--ink-soft); padding:22px 0; text-align:center; border:1.5px dashed var(--line); border-radius:var(--radius); }
 
-/* ---------- match card ---------- */
-.match-card{ position:relative; display:flex; gap:14px; align-items:stretch; background:#fff; border:1px solid var(--line); border-radius:var(--radius); padding:14px; margin-bottom:12px; overflow:hidden; flex-wrap:wrap; }
-.match-card .side{ flex:1; min-width:140px; }
-.match-card .side .kind{ font-family:"IBM Plex Mono"; font-size:10px; font-weight:600; letter-spacing:0.08em; }
-.match-card .side.want .kind{ color:var(--want); }
-.match-card .side.offer .kind{ color:var(--offer); }
-.match-card .side h4{ font-family:"Zen Kaku Gothic New"; font-size:15px; margin:3px 0; }
-.match-card .side .m{ font-family:"IBM Plex Mono"; font-size:11px; color:var(--ink-soft); }
-.match-card .mid{ display:flex; flex-direction:column; align-items:center; justify-content:center; font-family:"IBM Plex Mono"; font-size:11px; color:var(--ink-soft); width:96px; flex-shrink:0; border-left:1px dashed var(--line); border-right:1px dashed var(--line); padding:0 6px; text-align:center; }
-.match-card .mid .dist{ font-size:16px; font-weight:600; color:var(--ink); }
-.match-card .stamp{ position:absolute; top:8px; right:-26px; transform:rotate(18deg); background:var(--match); color:var(--ink); font-family:"Zen Kaku Gothic New"; font-weight:900; font-size:11px; letter-spacing:0.1em; padding:3px 30px; box-shadow:0 1px 2px var(--paper-shadow); }
-.match-actions{ display:flex; flex-direction:column; gap:6px; justify-content:center; flex-shrink:0; }
-.btn-sm{ font-family:"IBM Plex Mono"; font-size:11px; padding:7px 12px; border-radius:var(--radius); border:1px solid var(--ink); background:#fff; color:var(--ink); cursor:pointer; white-space:nowrap; }
-.btn-sm.primary{ background:var(--ink); color:var(--bg-panel); }
+/* ---------- connections ---------- */
+.conn-card{ position:relative; display:flex; gap:14px; align-items:stretch; background:#fff; border:1px solid var(--line); border-radius: var(--radius); padding:16px; margin-bottom:12px; box-shadow:var(--shadow); flex-wrap:wrap; }
+.conn-card .side{ flex:1; min-width:140px; }
+.conn-card .side .kind{ font-family:"Zen Maru Gothic"; font-weight:700; font-size:10.5px; }
+.conn-card .side.need .kind{ color:var(--need); }
+.conn-card .side.offer .kind{ color:var(--offer); }
+.conn-card .side h4{ font-family:"Zen Maru Gothic"; font-size:14.5px; margin:3px 0; }
+.conn-card .side .m{ font-size:11px; color:var(--ink-soft); }
+.conn-card .mid{ display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:11px; color:var(--ink-soft); width:100px; flex-shrink:0; text-align:center; }
+.conn-card .mid .dist{ font-family:"Zen Maru Gothic"; font-size:15px; font-weight:700; color:var(--ink); }
+.conn-card .stamp{ position:absolute; top:10px; right:14px; background:var(--offer); color:#fff; font-family:"Zen Maru Gothic"; font-weight:700; font-size:10.5px; padding:3px 12px; border-radius:12px; }
+.conn-actions{ display:flex; flex-direction:column; gap:6px; justify-content:center; flex-shrink:0; }
+.btn-sm{ font-size:11.5px; padding:8px 14px; border-radius:14px; border:1.5px solid var(--ink); background:#fff; color:var(--ink); cursor:pointer; white-space:nowrap; font-family:"Zen Maru Gothic"; font-weight:700; }
+.btn-sm.primary{ background:var(--ink); color:#fff; }
 .btn-sm:hover{ opacity:0.8; }
 
 /* ---------- chat ---------- */
-.chat-layout{ display:grid; grid-template-columns: 230px 1fr; gap:16px; min-height:420px; }
+.chat-layout{ display:grid; grid-template-columns: 220px 1fr; gap:16px; min-height:420px; }
 .chat-threads{ border-right:1px solid var(--line); padding-right:14px; }
-.thread-item{ padding:9px 8px; border-radius:var(--radius); cursor:pointer; margin-bottom:4px; font-size:12.5px; border:1px solid transparent; }
-.thread-item.active{ background:var(--match-soft); border-color:var(--match); }
-.thread-item .t-title{ font-weight:600; }
-.thread-item .t-sub{ font-family:"IBM Plex Mono"; font-size:10.5px; color:var(--ink-soft); }
+.thread-item{ padding:10px 9px; border-radius:12px; cursor:pointer; margin-bottom:5px; font-size:12.5px; border:1.5px solid transparent; }
+.thread-item.active{ background:var(--need-soft); border-color:var(--need); }
+.thread-item .t-title{ font-weight:700; font-family:"Zen Maru Gothic"; }
+.thread-item .t-sub{ font-size:10.5px; color:var(--ink-soft); }
 .chat-body{ display:flex; flex-direction:column; }
 .chat-msgs{ flex:1; overflow-y:auto; max-height:360px; padding:6px 4px; display:flex; flex-direction:column; gap:8px; }
-.msg{ max-width:75%; padding:8px 11px; border-radius:10px; font-size:13px; line-height:1.5; }
-.msg.me{ align-self:flex-end; background:var(--ink); color:var(--bg-panel); border-bottom-right-radius:2px; }
-.msg.them{ align-self:flex-start; background:var(--bg); border:1px solid var(--line); border-bottom-left-radius:2px; }
-.msg .m-meta{ font-family:"IBM Plex Mono"; font-size:9.5px; opacity:0.6; margin-top:3px; }
+.msg{ max-width:75%; padding:9px 13px; border-radius:14px; font-size:13px; line-height:1.5; }
+.msg.me{ align-self:flex-end; background:var(--need); color:#fff; border-bottom-right-radius:3px; }
+.msg.them{ align-self:flex-start; background:var(--bg); border:1px solid var(--line); border-bottom-left-radius:3px; }
+.msg .m-meta{ font-size:9.5px; opacity:0.65; margin-top:3px; }
 .chat-input{ display:flex; gap:8px; margin-top:10px; }
-.chat-input input{ flex:1; padding:10px; border:1px solid var(--line); border-radius:var(--radius); font-family:"IBM Plex Sans JP"; font-size:13.5px;}
-.chat-input button{ padding:0 18px; border:none; background:var(--ink); color:var(--bg-panel); border-radius:var(--radius); cursor:pointer; font-family:"Zen Kaku Gothic New"; font-weight:700; }
+.chat-input input{ flex:1; padding:11px; border:1.5px solid var(--line); border-radius:20px; font-family:"BIZ UDPGothic"; font-size:13.5px;}
+.chat-input button{ padding:0 20px; border:none; background:var(--need); color:#fff; border-radius:20px; cursor:pointer; font-family:"Zen Maru Gothic"; font-weight:700; }
 
-/* ---------- admin ---------- */
+/* ---------- coordinator (admin) ---------- */
 .stat-row{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
-.stat{ border:1px solid var(--line); border-radius:var(--radius); padding:12px; background:#fff; }
-.stat .v{ font-family:"IBM Plex Mono"; font-size:24px; font-weight:600; }
+.stat{ border:1px solid var(--line); border-radius: var(--radius); padding:14px; background:#fff; }
+.stat .v{ font-family:"Zen Maru Gothic"; font-size:23px; font-weight:800; color:var(--ink); }
 .stat .l{ font-size:11px; color:var(--ink-soft); margin-top:2px; }
 .ledger{ width:100%; border-collapse:collapse; font-size:12.5px; }
-.ledger th{ text-align:left; font-family:"IBM Plex Mono"; font-size:10.5px; color:var(--ink-soft); border-bottom:2px solid var(--ink); padding:6px 8px; letter-spacing:0.05em;}
-.ledger td{ padding:7px 8px; border-bottom:1px solid var(--line); font-family:"IBM Plex Mono"; }
+.ledger th{ text-align:left; font-size:10.5px; color:var(--ink-soft); border-bottom:2px solid var(--ink); padding:7px 8px; font-weight:700;}
+.ledger td{ padding:8px; border-bottom:1px solid var(--line); }
 .ledger tr:hover td{ background:var(--bg); }
-.pill{ font-size:10px; padding:2px 7px; border-radius:8px; font-family:"IBM Plex Mono"; }
+.pill{ font-size:10px; padding:2px 9px; border-radius:10px; font-weight:700; }
 .pill.open{ background:var(--offer-soft); color:var(--offer); }
-.pill.matched{ background:var(--match-soft); color:var(--match); }
-.section-title{ font-family:"Zen Kaku Gothic New"; font-weight:700; font-size:14px; margin:26px 0 10px; display:flex; align-items:center; gap:8px;}
+.pill.connected{ background:var(--need-soft); color:var(--need); }
+.section-title{ font-family:"Zen Maru Gothic"; font-weight:700; font-size:14.5px; margin:26px 0 12px; display:flex; align-items:center; gap:8px;}
 .section-title .rule{ flex:1; height:1px; background:var(--line); }
-.export-btn{ font-family:"IBM Plex Mono"; font-size:11px; padding:6px 12px; border:1px solid var(--ink); background:#fff; border-radius:var(--radius); cursor:pointer; }
+.export-btn{ font-size:11px; padding:7px 13px; border:1.5px solid var(--ink); background:#fff; border-radius:14px; cursor:pointer; font-family:"Zen Maru Gothic"; font-weight:700; }
 .table-wrap{ overflow-x:auto; }
-.bar-chart{ display:flex; flex-direction:column; gap:8px; }
-.bar-row{ display:grid; grid-template-columns:110px 1fr 40px; gap:8px; align-items:center; font-size:12px; }
-.bar-track{ height:14px; background:var(--bg); border-radius:2px; overflow:hidden; }
+.bar-chart{ display:flex; flex-direction:column; gap:9px; }
+.bar-row{ display:grid; grid-template-columns:70px 1fr 34px; gap:8px; align-items:center; font-size:12px; }
+.bar-track{ height:14px; background:var(--bg); border-radius:8px; overflow:hidden; }
 .bar-fill{ height:100%; background:var(--offer); }
+
+.connector-tool{ background:var(--bg); border:1.5px dashed var(--line); border-radius:var(--radius); padding:16px; margin-bottom:10px; }
+.connector-tool .row{ display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
+.connector-tool .field{ flex:1; min-width:200px; margin-bottom:0; }
+.connector-tool select{ width:100%; padding:10px; border:1.5px solid var(--line); border-radius:10px; font-family:"BIZ UDPGothic"; }
+.connector-tool button{ font-family:"Zen Maru Gothic"; font-weight:700; font-size:13px; padding:11px 20px; border:none; border-radius:14px; background:var(--ink); color:#fff; cursor:pointer; height:41px; }
 
 @media (max-width:640px){
   .grid2{ grid-template-columns:1fr; }
   .stat-row{ grid-template-columns:repeat(2,1fr); }
   .chat-layout{ grid-template-columns:1fr; }
   .chat-threads{ border-right:none; border-bottom:1px solid var(--line); padding-right:0; padding-bottom:10px; }
-  .match-card{ flex-direction:column; }
-  .match-card .mid{ border-left:none; border-right:none; border-top:1px dashed var(--line); border-bottom:1px dashed var(--line); flex-direction:row; justify-content:space-between; padding:6px 0; }
+  .conn-card{ flex-direction:column; }
+  .need-card{ padding-left:18px; }
+  .need-card .kind-glow{ position:static; margin-bottom:8px; }
 }
