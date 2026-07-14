@@ -547,7 +547,7 @@ function renderChatTab(){
         </div>`;
       listenChat(m.id);
       const send = async () => {
-        const inp = document.getElementById('chatText');
+        const inp = body.querySelector('#chatText');
         const text = inp.value.trim();
         if(!text) return;
         inp.value = '';
@@ -555,8 +555,8 @@ function renderChatTab(){
           senderId: state.profile.id, senderName: state.profile.name, text, ts: Date.now()
         });
       };
-      document.getElementById('chatSend').onclick = send;
-      document.getElementById('chatText').addEventListener('keydown', e => { if(e.key==='Enter') send(); });
+      body.querySelector('#chatSend').onclick = send;
+      body.querySelector('#chatText').addEventListener('keydown', e => { if(e.key==='Enter') send(); });
     }
   } else {
     body.innerHTML = `<div class="empty">左のスレッドを選択してください。</div>`;
