@@ -19,6 +19,8 @@ const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
 const db = getFirestore(fbApp);
 
+const LOCAL_KEY = 'attaka_profile_code';
+
 let state = {
   profile: null,
   tab: 'top',
@@ -64,41 +66,101 @@ function deadlineBadge(deadline){
 }
 
 // ---------------- gate ----------------
+// プロフィールのID（マイページコード）は Firebase Auth の匿名UIDとは切り離してあります。
+// こうすることで、ブラウザのキャッシュ／サイトデータを消してしまっても、
+// 「マイページコード」さえ分かれば別の端末・別のブラウザから同じ自分に戻れます。
+let gateMode = 'new'; // 'new' | 'restore'
+
 function renderGate(errMsg){
   root.innerHTML = `
     <div class="gate">
       <div class="glow"></div>
       <h1>ひらかたあったかクラウド</h1>
-      <p>地域の「困った」と「できること」をつなぐ、あったかい支援の掲示板です。表示名を入力して始めましょう。</p>
+      <p>地域の「困った」と「できること」をつなぐ、あったかい支援の掲示板です。</p>
       ${ACCESS_CODE ? '<input id="gateCode" type="password" placeholder="合言葉">' : ''}
-      <input id="gateName" type="text" placeholder="表示名（例：さとう農園）">
-      <button id="gateBtn">はじめる</button>
+      ${gateMode === 'new' ? `
+        <input id="gateName" type="text" placeholder="表示名（例：さとう農園）">
+        <button id="gateBtn">はじめる</button>
+        <p style="margin-top:14px;"><a href="#" id="toRestore" style="color:var(--ink-soft); font-size:12px;">前に登録した方はこちら（マイページコードでログイン）</a></p>
+      ` : `
+        <input id="gateRestoreCode" type="text" placeholder="マイページコードを入力">
+        <button id="gateRestoreBtn">このコードでログインする</button>
+        <p style="margin-top:14px;"><a href="#" id="toNew" style="color:var(--ink-soft); font-size:12px;">はじめての方はこちら</a></p>
+      `}
       <div class="err">${errMsg || ''}</div>
     </div>`;
-  document.getElementById('gateBtn').onclick = onGateSubmit;
-  document.getElementById('gateName').addEventListener('keydown', e => { if(e.key==='Enter') onGateSubmit(); });
+
+  if(gateMode === 'new'){
+    document.getElementById('gateBtn').onclick = onGateSubmit;
+    document.getElementById('gateName').addEventListener('keydown', e => { if(e.key==='Enter') onGateSubmit(); });
+    document.getElementById('toRestore').onclick = (e) => { e.preventDefault(); gateMode='restore'; renderGate(); };
+  } else {
+    document.getElementById('gateRestoreBtn').onclick = onGateRestore;
+    document.getElementById('gateRestoreCode').addEventListener('keydown', e => { if(e.key==='Enter') onGateRestore(); });
+    document.getElementById('toNew').onclick = (e) => { e.preventDefault(); gateMode='new'; renderGate(); };
+  }
+}
+
+function checkAccessCode(){
+  const code = ACCESS_CODE ? document.getElementById('gateCode').value : '';
+  return !ACCESS_CODE || code === ACCESS_CODE;
 }
 
 async function onGateSubmit(){
+  if(!checkAccessCode()){ renderGate('合言葉が違います'); return; }
   const name = document.getElementById('gateName').value.trim();
-  const code = ACCESS_CODE ? document.getElementById('gateCode').value : '';
-  if(ACCESS_CODE && code !== ACCESS_CODE){ renderGate('合言葉が違います'); return; }
   if(!name){ renderGate('表示名を入力してください'); return; }
-  root.innerHTML = `<div class="empty" style="margin-top:60px;">ログイン中…</div>`;
-  const cred = await signInAnonymously(auth);
-  const profile = { id: cred.user.uid, name, lat:null, lng:null, createdAt: Date.now() };
-  await setDoc(doc(db,'profiles',profile.id), profile);
+  root.innerHTML = `<div class="empty" style="margin-top:60px;">登録中…</div>`;
+  await signInAnonymously(auth);
+  const profileId = uid();
+  const profile = { id: profileId, name, lat:null, lng:null, createdAt: Date.now() };
+  await setDoc(doc(db,'profiles',profileId), profile);
+  localStorage.setItem(LOCAL_KEY, profileId);
   state.profile = profile;
+  startApp();
+  showMyCodeNotice(profileId, true);
+}
+
+async function onGateRestore(){
+  if(!checkAccessCode()){ renderGate('合言葉が違います'); return; }
+  const code = document.getElementById('gateRestoreCode').value.trim();
+  if(!code){ renderGate('マイページコードを入力してください'); return; }
+  root.innerHTML = `<div class="empty" style="margin-top:60px;">確認中…</div>`;
+  await signInAnonymously(auth);
+  const snap = await getDoc(doc(db,'profiles',code));
+  if(!snap.exists()){ gateMode='restore'; renderGate('そのコードは見つかりませんでした。入力内容をご確認ください'); return; }
+  localStorage.setItem(LOCAL_KEY, code);
+  state.profile = snap.data();
   startApp();
 }
 
-onAuthStateChanged(auth, async (user) => {
-  if(user){
-    const snap = await getDoc(doc(db,'profiles',user.uid));
-    if(snap.exists()){ state.profile = snap.data(); startApp(); }
-    else { renderGate(); }
-  } else { renderGate(); }
-});
+function showMyCodeNotice(code, isNew){
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed; inset:0; background:rgba(74,55,40,0.45); display:flex; align-items:center; justify-content:center; z-index:999; padding:16px;';
+  box.innerHTML = `
+    <div style="background:#fff; border-radius:18px; padding:26px; max-width:380px; text-align:center; box-shadow:0 8px 30px rgba(0,0,0,0.25);">
+      <div style="font-family:'Zen Maru Gothic'; font-weight:800; font-size:17px; margin-bottom:10px;">${isNew ? 'ようこそ！' : 'おかえりなさい'}</div>
+      <p style="font-size:12.5px; color:var(--ink-soft); line-height:1.7; margin-bottom:14px;">
+        あなたの「マイページコード」です。これがあれば、別の端末やブラウザのキャッシュを消した後でも、同じ自分として戻ってこられます。<br><b>必ずスクリーンショットか、メモで保存してください。</b>
+      </p>
+      <div style="font-family:'Zen Maru Gothic'; font-weight:800; font-size:20px; letter-spacing:0.03em; background:var(--bg); border:1.5px dashed var(--line); border-radius:10px; padding:12px; margin-bottom:16px; word-break:break-all;">${code}</div>
+      <button id="closeCodeNotice" style="font-family:'Zen Maru Gothic'; font-weight:700; padding:10px 22px; border:none; border-radius:20px; background:var(--need); color:#fff; cursor:pointer;">わかりました</button>
+    </div>`;
+  document.body.appendChild(box);
+  document.getElementById('closeCodeNotice').onclick = () => box.remove();
+}
+
+async function boot(){
+  const savedCode = localStorage.getItem(LOCAL_KEY);
+  if(savedCode){
+    await signInAnonymously(auth);
+    const snap = await getDoc(doc(db,'profiles',savedCode));
+    if(snap.exists()){ state.profile = snap.data(); startApp(); return; }
+    localStorage.removeItem(LOCAL_KEY); // 無効なコードだったら忘れる
+  }
+  renderGate();
+}
+boot();
 
 function startApp(){ listenListings(); listenConnections(); render(); }
 
@@ -188,11 +250,13 @@ function renderHeader(){
     <div class="whoami">
       表示名: <b>${escapeHtml(state.profile.name)}</b><br>
       <button id="renameBtn">名前を変更</button>
+      <button id="showCodeBtn">マイページコード</button>
     </div>`;
   h.querySelector('#renameBtn').onclick = async () => {
     const n = prompt('表示名を入力してください', state.profile.name);
     if(n && n.trim()){ state.profile.name = n.trim(); await saveProfile(); render(); }
   };
+  h.querySelector('#showCodeBtn').onclick = () => showMyCodeNotice(state.profile.id, false);
   return h;
 }
 
