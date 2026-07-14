@@ -103,6 +103,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);min-height:10
 .geo-btn{ font-size:12.5px; white-space:nowrap; padding:10px 14px; border:none; background:var(--ink); color:#fff; border-radius:10px; cursor:pointer; height:41px; font-family:"Zen Maru Gothic"; font-weight:700; }
 .geo-btn:hover{ opacity:0.85; }
 .geo-status{ font-size:11.5px; color:var(--offer); margin:8px 0 12px; min-height:14px;}
+.map-hint{ font-size:11.5px; color:var(--ink-soft); margin-bottom:6px; }
+.loc-map{ width:100%; height:220px; border-radius:10px; border:1.5px solid var(--line); margin-bottom:14px; cursor:pointer; }
 
 .submit-btn{ font-family:"Zen Maru Gothic"; font-weight:700; font-size:15px; padding:13px 24px; border:none; border-radius:22px; cursor:pointer; color:#fff; }
 .submit-btn.need{ background:var(--need); }

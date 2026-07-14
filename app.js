@@ -14,6 +14,7 @@ const KINDS = {
   "コト": { emoji:"🛠️", label:"コト（作業や活動を手伝いたい・頼みたい）", subcats:["力仕事","買い物代行","掃除・片付け","庭仕事","行事の手伝い","その他"] },
 };
 const KIND_KEYS = Object.keys(KINDS);
+const HIRAKATA_CENTER = { lat: 34.8149, lng: 135.6489 };
 
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
@@ -395,6 +396,8 @@ function renderRegister(){
         <button type="button" class="geo-btn" id="geoBtn">📍 現在地を取得</button>
       </div>
       <div class="geo-status" id="geoStatus">${state.geoStatus}</div>
+      <div class="map-hint">📍 地図をタップして場所を選ぶこともできます</div>
+      <div class="loc-map" id="locMap"></div>
       <div class="field"><label>詳細メモ</label><textarea name="note" placeholder="例）平日夕方に対応できる方を探しています"></textarea></div>
       <button type="submit" class="submit-btn ${state.formMode}">${state.formMode==='need' ? 'この内容で相談する' : 'この内容で登録する'}</button>
     </form>
@@ -405,18 +408,38 @@ function renderRegister(){
   wrap.querySelectorAll('.type-btn').forEach(b=>{ b.onclick = () => { state.formMode = b.dataset.t; render(); }; });
   wrap.querySelectorAll('.kind-btn').forEach(b=>{ b.onclick = () => { state.formKind = b.dataset.k; render(); }; });
 
+  const latInput = wrap.querySelector('#latInput');
+  const lngInput = wrap.querySelector('#lngInput');
+
+  const initLat = Number(latInput.value) || HIRAKATA_CENTER.lat;
+  const initLng = Number(lngInput.value) || HIRAKATA_CENTER.lng;
+  const map = L.map(wrap.querySelector('#locMap')).setView([initLat, initLng], latInput.value ? 15 : 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19,
+  }).addTo(map);
+  let marker = latInput.value ? L.marker([initLat, initLng]).addTo(map) : null;
+
+  function setLocation(lat, lng, statusMsg){
+    latInput.value = lat.toFixed(5);
+    lngInput.value = lng.toFixed(5);
+    if(marker) marker.setLatLng([lat, lng]); else marker = L.marker([lat, lng]).addTo(map);
+    map.setView([lat, lng], Math.max(map.getZoom(), 15));
+    setGeoStatus(wrap, statusMsg);
+  }
+
+  map.on('click', e => setLocation(e.latlng.lat, e.latlng.lng, '地図から場所を選択しました ✓'));
+
   const geoBtn = wrap.querySelector('#geoBtn');
   geoBtn.onclick = () => {
-    if(!navigator.geolocation){ setGeoStatus(wrap,'位置情報が利用できません'); return; }
+    if(!navigator.geolocation){ setGeoStatus(wrap,'位置情報が利用できません（地図をタップしてください）'); return; }
     setGeoStatus(wrap,'取得中…');
     navigator.geolocation.getCurrentPosition(async pos => {
-      wrap.querySelector('#latInput').value = pos.coords.latitude.toFixed(5);
-      wrap.querySelector('#lngInput').value = pos.coords.longitude.toFixed(5);
+      setLocation(pos.coords.latitude, pos.coords.longitude, '現在地を取得しました ✓');
       state.profile.lat = pos.coords.latitude;
       state.profile.lng = pos.coords.longitude;
       await saveProfile();
-      setGeoStatus(wrap,'現在地を取得しました ✓');
-    }, () => setGeoStatus(wrap,'取得できませんでした（手入力してください）'));
+    }, () => setGeoStatus(wrap,'取得できませんでした（地図をタップして場所を選んでください）'));
   };
 
   wrap.querySelector('#regForm').onsubmit = async (e) => {
