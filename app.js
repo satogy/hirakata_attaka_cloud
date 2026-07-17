@@ -14,7 +14,8 @@ const KINDS = {
   "コト": { emoji:"🛠️", label:"コト（作業や活動を手伝いたい・頼みたい）", subcats:["力仕事","買い物代行","掃除・片付け","庭仕事","行事の手伝い","その他"] },
 };
 const KIND_KEYS = Object.keys(KINDS);
-const HIRAKATA_CENTER = { lat: 34.8149, lng: 135.6489 };
+const HIRAKATA_CENTER = { lat: 34.8147201, lng: 135.6487138 };
+const HIRAKATA_DEFAULT_ZOOM = 17;
 
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
@@ -432,7 +433,7 @@ function renderRegister(){
     regMapContainer = mapPlaceholder;
     const initLat = Number(latInput.value) || HIRAKATA_CENTER.lat;
     const initLng = Number(lngInput.value) || HIRAKATA_CENTER.lng;
-    regMap = L.map(regMapContainer).setView([initLat, initLng], latInput.value ? 15 : 13);
+    regMap = L.map(regMapContainer, { fadeAnimation: false }).setView([initLat, initLng], latInput.value ? 15 : HIRAKATA_DEFAULT_ZOOM);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       maxZoom: 19,
@@ -441,13 +442,18 @@ function renderRegister(){
     regMap.on('click', e => setRegLocation(e.latlng.lat, e.latlng.lng, '地図から場所を選択しました ✓'));
   } else {
     mapPlaceholder.replaceWith(regMapContainer);
-    regMap.invalidateSize();
     if(regMarker){
       const pos = regMarker.getLatLng();
       latInput.value = pos.lat.toFixed(5);
       lngInput.value = pos.lng.toFixed(5);
     }
   }
+  // renderRegister()の戻り値はこの時点ではまだdocumentにアタッチされていない
+  // （render()がroot.appendChild()するのはこの関数が返った後）ため、ここで
+  // invalidateSize()を呼んでもコンテナのサイズは0のまま。render()が一通り
+  // DOMに繋ぎ終えるまで待ってから計算し直す（バックグラウンドタブでも確実に
+  // 動くようrequestAnimationFrameではなくsetTimeoutを使う）。
+  setTimeout(() => regMap && regMap.invalidateSize(), 0);
 
   const geoBtn = wrap.querySelector('#geoBtn');
   geoBtn.onclick = () => {
