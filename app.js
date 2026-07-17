@@ -198,7 +198,7 @@ async function autoSuggestConnections(newListing){
   }
 }
 
-async function proposeConnection(needL, offerL, connectedBy){
+async function proposeConnection(needL, offerL, connectedBy, connectedByName=null){
   const dup = state.connections.find(m => m.needId===needL.id && m.offerId===offerL.id);
   if(dup) return dup;
   const dist = haversine(needL.lat, needL.lng, offerL.lat, offerL.lng);
@@ -206,7 +206,7 @@ async function proposeConnection(needL, offerL, connectedBy){
     id: uid(), needId: needL.id, offerId: offerL.id,
     title: needL.title, kind: needL.kind,
     participants: [needL.userId, offerL.userId],
-    distanceKm: dist, status: 'proposed', connectedBy, createdAt: Date.now(),
+    distanceKm: dist, status: 'proposed', connectedBy, connectedByName, connectedAt: Date.now(), createdAt: Date.now(),
   };
   state.connections.push(conn);
   await setDoc(doc(db,'connections',conn.id), conn);
@@ -268,7 +268,7 @@ function renderTabs(){
     {id:'top', label:'TOP'},
     {id:'register', label:'登録する'},
     {id:'connections', label:'つながり', n: myC},
-    {id:'chat', label:'チャット'},
+    {id:'chat', label:'チャット', n: myC},
     {id:'admin', label:'コーディネーター'},
   ];
   tabs.forEach(t=>{
@@ -361,12 +361,27 @@ async function onOfferToHelp(need){
   };
   await setDoc(doc(db,'listings',offerListing.id), offerListing);
   state.listings.unshift(offerListing);
-  const conn = await proposeConnection(need, offerListing, state.profile.id);
+  const conn = await proposeConnection(need, offerListing, state.profile.id, state.profile.name);
   state.tab = 'chat'; state.activeConnId = conn.id;
   render();
 }
 
 // ---- register ----
+// 地図はrender()のたびに#rootごと作り直されるため、Leafletのインスタンス／DOMノードを
+// モジュール直下に保持して使い回す。再作成すると毎回タイルを再取得してしまい、
+// 他のユーザーの操作でFirestoreの更新が入るたびに地図が固まって見える原因になっていた。
+let regMap = null, regMapContainer = null, regMarker = null, regFormRefs = null;
+
+function setRegLocation(lat, lng, statusMsg){
+  if(!regFormRefs) return;
+  const { wrap, latInput, lngInput } = regFormRefs;
+  latInput.value = lat.toFixed(5);
+  lngInput.value = lng.toFixed(5);
+  if(regMarker) regMarker.setLatLng([lat, lng]); else regMarker = L.marker([lat, lng]).addTo(regMap);
+  regMap.setView([lat, lng], Math.max(regMap.getZoom(), 15));
+  setGeoStatus(wrap, statusMsg);
+}
+
 function renderRegister(){
   const wrap = document.createElement('div');
   const kindInfo = KINDS[state.formKind];
@@ -410,32 +425,36 @@ function renderRegister(){
 
   const latInput = wrap.querySelector('#latInput');
   const lngInput = wrap.querySelector('#lngInput');
+  regFormRefs = { wrap, latInput, lngInput };
 
-  const initLat = Number(latInput.value) || HIRAKATA_CENTER.lat;
-  const initLng = Number(lngInput.value) || HIRAKATA_CENTER.lng;
-  const map = L.map(wrap.querySelector('#locMap')).setView([initLat, initLng], latInput.value ? 15 : 13);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    maxZoom: 19,
-  }).addTo(map);
-  let marker = latInput.value ? L.marker([initLat, initLng]).addTo(map) : null;
-
-  function setLocation(lat, lng, statusMsg){
-    latInput.value = lat.toFixed(5);
-    lngInput.value = lng.toFixed(5);
-    if(marker) marker.setLatLng([lat, lng]); else marker = L.marker([lat, lng]).addTo(map);
-    map.setView([lat, lng], Math.max(map.getZoom(), 15));
-    setGeoStatus(wrap, statusMsg);
+  const mapPlaceholder = wrap.querySelector('#locMap');
+  if(!regMap){
+    regMapContainer = mapPlaceholder;
+    const initLat = Number(latInput.value) || HIRAKATA_CENTER.lat;
+    const initLng = Number(lngInput.value) || HIRAKATA_CENTER.lng;
+    regMap = L.map(regMapContainer).setView([initLat, initLng], latInput.value ? 15 : 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19,
+    }).addTo(regMap);
+    if(latInput.value) regMarker = L.marker([initLat, initLng]).addTo(regMap);
+    regMap.on('click', e => setRegLocation(e.latlng.lat, e.latlng.lng, '地図から場所を選択しました ✓'));
+  } else {
+    mapPlaceholder.replaceWith(regMapContainer);
+    regMap.invalidateSize();
+    if(regMarker){
+      const pos = regMarker.getLatLng();
+      latInput.value = pos.lat.toFixed(5);
+      lngInput.value = pos.lng.toFixed(5);
+    }
   }
-
-  map.on('click', e => setLocation(e.latlng.lat, e.latlng.lng, '地図から場所を選択しました ✓'));
 
   const geoBtn = wrap.querySelector('#geoBtn');
   geoBtn.onclick = () => {
     if(!navigator.geolocation){ setGeoStatus(wrap,'位置情報が利用できません（地図をタップしてください）'); return; }
     setGeoStatus(wrap,'取得中…');
     navigator.geolocation.getCurrentPosition(async pos => {
-      setLocation(pos.coords.latitude, pos.coords.longitude, '現在地を取得しました ✓');
+      setRegLocation(pos.coords.latitude, pos.coords.longitude, '現在地を取得しました ✓');
       state.profile.lat = pos.coords.latitude;
       state.profile.lng = pos.coords.longitude;
       await saveProfile();
@@ -650,7 +669,7 @@ function renderAdmin(){
     const nId = pickNeed.value, oId = pickOffer.value;
     if(!nId || !oId){ alert('困りごとと、できることの両方を選んでください'); return; }
     const n = listingById(nId), o = listingById(oId);
-    await proposeConnection(n, o, 'coordinator');
+    await proposeConnection(n, o, 'coordinator', state.profile.name);
     alert('つなげました。「つながり」タブから確認できます。');
     render();
   };
@@ -667,15 +686,34 @@ function renderAdmin(){
   });
 
   wrap.querySelector('#listingTable').innerHTML = `<tr><th>種別</th><th>内容</th><th>分類</th><th>登録者</th><th>期限</th><th>状態</th><th>登録日時</th></tr>` +
-    (listings.map(l => `<tr><td>${l.mode==='need'?'困りごと':'できること'}</td><td>${escapeHtml(l.title)}</td><td>${escapeHtml(l.kind)}・${escapeHtml(l.subcat)}</td><td>${escapeHtml(l.userName)}</td><td>${l.deadline || '-'}</td><td><span class="pill ${l.status==='open'?'open':'connected'}">${l.status==='open'?'募集中':'成立'}</span></td><td>${fmtTime(l.createdAt)}</td></tr>`).join('') || `<tr><td colspan="7">データがありません</td></tr>`);
+    (listings.map(l => `<tr><td>${l.mode==='need'?'困りごと':'できること'}</td><td>${renderContentCell(l)}</td><td>${escapeHtml(l.kind)}・${escapeHtml(l.subcat)}</td><td>${escapeHtml(l.userName)}</td><td>${l.deadline || '-'}</td><td><span class="pill ${l.status==='open'?'open':'connected'}">${l.status==='open'?'募集中':'成立'}</span></td><td>${fmtTime(l.createdAt)}</td></tr>`).join('') || `<tr><td colspan="7">データがありません</td></tr>`);
 
-  wrap.querySelector('#connTable').innerHTML = `<tr><th>内容</th><th>困っている人</th><th>できる人</th><th>距離</th><th>つないだ人</th><th>状態</th><th>作成日時</th></tr>` +
-    (conns.map(m => { const n=listingById(m.needId), o=listingById(m.offerId); return `<tr><td>${escapeHtml(m.title)}</td><td>${n?escapeHtml(n.userName):'-'}</td><td>${o?escapeHtml(o.userName):'-'}</td><td>${fmtDist(m.distanceKm)}</td><td>${m.connectedBy==='system'?'自動':(m.connectedBy==='coordinator'?'コーディネーター':'本人')}</td><td><span class="pill ${m.status==='connected'?'connected':'open'}">${m.status==='connected'?'成立':'提案中'}</span></td><td>${fmtTime(m.createdAt)}</td></tr>`; }).join('') || `<tr><td colspan="7">データがありません</td></tr>`);
+  wrap.querySelector('#connTable').innerHTML = `<tr><th>内容</th><th>困っている人</th><th>できる人</th><th>距離</th><th>つないだ人</th><th>つないだ日時</th><th>状態</th></tr>` +
+    (conns.map(m => { const n=listingById(m.needId), o=listingById(m.offerId);
+      const who = m.connectedBy==='system' ? '自動提案'
+        : m.connectedBy==='coordinator' ? `コーディネーター${m.connectedByName ? '：'+escapeHtml(m.connectedByName) : ''}`
+        : (m.connectedByName ? escapeHtml(m.connectedByName)+'（本人）' : '本人');
+      return `<tr><td>${escapeHtml(m.title)}</td><td>${n?escapeHtml(n.userName):'-'}</td><td>${o?escapeHtml(o.userName):'-'}</td><td>${fmtDist(m.distanceKm)}</td><td>${who}</td><td>${m.connectedBy==='system'?'-':fmtTime(m.connectedAt||m.createdAt)}</td><td><span class="pill ${m.status==='connected'?'connected':'open'}">${m.status==='connected'?'成立':'提案中'}</span></td></tr>`; }).join('') || `<tr><td colspan="7">データがありません</td></tr>`);
 
   wrap.querySelector('#expListings').onclick = () => exportCsv(['mode','title','kind','subcat','userName','deadline','status','createdAt'], listings, 'listings.csv');
   wrap.querySelector('#expConns').onclick = () => exportCsv(['title','needId','offerId','distanceKm','connectedBy','status','createdAt'], conns, 'connections.csv');
 
   return wrap;
+}
+
+function renderContentCell(l){
+  const badge = l.mode==='need' ? deadlineBadge(l.deadline) : null;
+  return `
+    <span class="content-cell" tabindex="0">
+      ${escapeHtml(l.title)}
+      <div class="content-popover">
+        <div class="cp-title">${escapeHtml(l.title)}</div>
+        <div class="cp-row">分類: ${escapeHtml(l.kind)}・${escapeHtml(l.subcat)}</div>
+        ${badge ? `<div class="cp-row">期限: ${badge.text}</div>` : ''}
+        <div class="cp-row">座標: ${l.lat ? l.lat.toFixed(4)+', '+l.lng.toFixed(4) : '未設定'}</div>
+        <div class="cp-row">詳細メモ: ${l.note ? escapeHtml(l.note) : '（メモなし）'}</div>
+      </div>
+    </span>`;
 }
 
 function exportCsv(cols, rows, filename){
