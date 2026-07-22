@@ -3,8 +3,8 @@ import {
   getAuth, signInAnonymously, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  getFirestore, collection, doc, setDoc, getDoc, addDoc, onSnapshot,
-  query, orderBy, updateDoc, deleteDoc
+  getFirestore, collection, doc, setDoc, getDoc, getDocs, addDoc, onSnapshot,
+  query, orderBy, limit, updateDoc, deleteDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, ACCESS_CODE } from "./firebase-config.js";
 
@@ -34,6 +34,11 @@ let state = {
   chatUnsub: null,
   chatMsgs: [],
   geoStatus: '',
+  isAdmin: false,
+  adminLoginError: '',
+  report: null,       // レポート生成結果（生成中はundefined、未生成はnull）
+  adminChatOpenId: null, // 管理者が閲覧中のつながりID
+  adminChatMsgs: [],
 };
 
 const root = document.getElementById('root');
@@ -164,7 +169,32 @@ async function boot(){
 }
 boot();
 
-function startApp(){ listenListings(); listenConnections(); render(); }
+function startApp(){
+  listenListings(); listenConnections(); render();
+  checkAdminStatus();
+}
+
+async function checkAdminStatus(){
+  try {
+    const snap = await getDoc(doc(db,'admins', auth.currentUser.uid));
+    state.isAdmin = snap.exists();
+    if(state.isAdmin) render();
+  } catch(e) {
+    // firestore.rulesにadminsのmatchブロックがまだデプロイされていない環境では
+    // permission-deniedになる。管理者ではない状態として静かに扱う。
+  }
+}
+
+async function adminLogin(secret){
+  state.adminLoginError = '';
+  try {
+    await setDoc(doc(db,'admins', auth.currentUser.uid), { claim: secret, profileName: state.profile.name, registeredAt: Date.now() });
+    state.isAdmin = true;
+  } catch(e) {
+    state.adminLoginError = '合言葉が違います';
+  }
+  render();
+}
 
 function listenListings(){
   const q = query(collection(db,'listings'), orderBy('createdAt','desc'));
@@ -551,7 +581,7 @@ function renderConnCard(m){
   actions.appendChild(chatBtn);
   if(m.status!=='connected'){
     const confirmBtn = document.createElement('button'); confirmBtn.className='btn-sm'; confirmBtn.textContent='つながり成立にする';
-    confirmBtn.onclick = async () => { await updateDoc(doc(db,'connections',m.id), {status:'connected'}); };
+    confirmBtn.onclick = async () => { await updateDoc(doc(db,'connections',m.id), {status:'connected', matchedAt: Date.now()}); };
     actions.appendChild(confirmBtn);
   }
   el.appendChild(sideN); el.appendChild(mid); el.appendChild(sideO); el.appendChild(actions);
@@ -662,6 +692,29 @@ function renderAdmin(){
 
     <div class="section-title"><span>つながり一覧</span><span class="rule"></span><button class="export-btn" id="expConns">CSVエクスポート</button></div>
     <div class="table-wrap"><table class="ledger" id="connTable"></table></div>
+
+    ${state.isAdmin ? `
+      <div class="section-title admin-section"><span>🔒 管理者レポート</span><span class="rule"></span></div>
+      <div class="admin-report">
+        <p class="sub">マッチまでにかかった時間を集計します（登録日時／やり取り開始日時はチャットのメッセージ送受信履歴から算出）。</p>
+        <button class="export-btn" id="genReportBtn">レポートを生成</button>
+        <div id="reportResult"></div>
+      </div>
+
+      <div class="section-title admin-section"><span>🔒 チャット閲覧</span><span class="rule"></span></div>
+      <p class="sub">「つながり一覧」の各行にある「チャットを見る」から、参加者同士のやり取りを確認できます。</p>
+      <div id="adminChatViewer"></div>
+    ` : `
+      <div class="section-title admin-section"><span>🔒 管理者レポート</span><span class="rule"></span></div>
+      <div class="admin-gate">
+        <p class="sub">チャット閲覧・マッチ時間レポートは管理者限定です。合言葉を入力してください。</p>
+        <div class="row">
+          <input type="password" id="adminSecretInput" placeholder="管理者用の合言葉">
+          <button id="adminLoginBtn">認証する</button>
+        </div>
+        <div class="geo-status">${state.adminLoginError}</div>
+      </div>
+    `}
   `;
 
   // 手動連携ツール
@@ -694,17 +747,123 @@ function renderAdmin(){
   wrap.querySelector('#listingTable').innerHTML = `<tr><th>種別</th><th>内容</th><th>分類</th><th>登録者</th><th>期限</th><th>状態</th><th>登録日時</th></tr>` +
     (listings.map(l => `<tr><td>${l.mode==='need'?'困りごと':'できること'}</td><td>${renderContentCell(l)}</td><td>${escapeHtml(l.kind)}・${escapeHtml(l.subcat)}</td><td>${escapeHtml(l.userName)}</td><td>${l.deadline || '-'}</td><td><span class="pill ${l.status==='open'?'open':'connected'}">${l.status==='open'?'募集中':'成立'}</span></td><td>${fmtTime(l.createdAt)}</td></tr>`).join('') || `<tr><td colspan="7">データがありません</td></tr>`);
 
-  wrap.querySelector('#connTable').innerHTML = `<tr><th>内容</th><th>困っている人</th><th>できる人</th><th>距離</th><th>つないだ人</th><th>つないだ日時</th><th>状態</th></tr>` +
+  const connCols = state.isAdmin ? 8 : 7;
+  wrap.querySelector('#connTable').innerHTML = `<tr><th>内容</th><th>困っている人</th><th>できる人</th><th>距離</th><th>つないだ人</th><th>つないだ日時</th><th>状態</th>${state.isAdmin?'<th>チャット</th>':''}</tr>` +
     (conns.map(m => { const n=listingById(m.needId), o=listingById(m.offerId);
       const who = m.connectedBy==='system' ? '自動提案'
         : m.connectedBy==='coordinator' ? `コーディネーター${m.connectedByName ? '：'+escapeHtml(m.connectedByName) : ''}`
         : (m.connectedByName ? escapeHtml(m.connectedByName)+'（本人）' : '本人');
-      return `<tr><td>${escapeHtml(m.title)}</td><td>${n?escapeHtml(n.userName):'-'}</td><td>${o?escapeHtml(o.userName):'-'}</td><td>${fmtDist(m.distanceKm)}</td><td>${who}</td><td>${m.connectedBy==='system'?'-':fmtTime(m.connectedAt||m.createdAt)}</td><td><span class="pill ${m.status==='connected'?'connected':'open'}">${m.status==='connected'?'成立':'提案中'}</span></td></tr>`; }).join('') || `<tr><td colspan="7">データがありません</td></tr>`);
+      const chatCell = state.isAdmin ? `<td><button class="btn-sm view-chat-btn" data-conn="${m.id}">見る</button></td>` : '';
+      return `<tr><td>${escapeHtml(m.title)}</td><td>${n?escapeHtml(n.userName):'-'}</td><td>${o?escapeHtml(o.userName):'-'}</td><td>${fmtDist(m.distanceKm)}</td><td>${who}</td><td>${m.connectedBy==='system'?'-':fmtTime(m.connectedAt||m.createdAt)}</td><td><span class="pill ${m.status==='connected'?'connected':'open'}">${m.status==='connected'?'成立':'提案中'}</span></td>${chatCell}</tr>`; }).join('') || `<tr><td colspan="${connCols}">データがありません</td></tr>`);
 
   wrap.querySelector('#expListings').onclick = () => exportCsv(['mode','title','kind','subcat','userName','deadline','status','createdAt'], listings, 'listings.csv');
   wrap.querySelector('#expConns').onclick = () => exportCsv(['title','needId','offerId','distanceKm','connectedBy','status','createdAt'], conns, 'connections.csv');
 
+  if(!state.isAdmin){
+    wrap.querySelector('#adminLoginBtn').onclick = () => adminLogin(wrap.querySelector('#adminSecretInput').value.trim());
+    wrap.querySelector('#adminSecretInput').addEventListener('keydown', e => { if(e.key==='Enter') adminLogin(wrap.querySelector('#adminSecretInput').value.trim()); });
+  } else {
+    wrap.querySelectorAll('.view-chat-btn').forEach(b => {
+      b.onclick = () => { state.adminChatOpenId = b.dataset.conn; listenAdminChat(b.dataset.conn); render(); };
+    });
+    renderAdminChatViewer(wrap.querySelector('#adminChatViewer'));
+
+    wrap.querySelector('#genReportBtn').onclick = () => generateReport();
+    renderReportResult(wrap.querySelector('#reportResult'));
+  }
+
   return wrap;
+}
+
+function listenAdminChat(connId){
+  if(state.chatUnsub) state.chatUnsub();
+  const q = query(collection(db,'connections',connId,'messages'), orderBy('ts','asc'));
+  state.chatUnsub = onSnapshot(q, snap => { state.adminChatMsgs = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+}
+
+function renderAdminChatViewer(el){
+  if(!el || !state.adminChatOpenId) return;
+  const m = state.connections.find(c=>c.id===state.adminChatOpenId);
+  if(!m) return;
+  const n = listingById(m.needId), o = listingById(m.offerId);
+  const box = document.createElement('div'); box.className = 'admin-chat-box';
+  const closeBtn = document.createElement('button'); closeBtn.className='btn-sm'; closeBtn.textContent='閉じる';
+  closeBtn.onclick = () => { if(state.chatUnsub) state.chatUnsub(); state.adminChatOpenId = null; state.adminChatMsgs = []; render(); };
+  const title = document.createElement('div'); title.className='cp-title';
+  title.textContent = `${n?n.userName:'?'} × ${o?o.userName:'?'}（${escapeHtml(m.title)}）`;
+  box.appendChild(title); box.appendChild(closeBtn);
+  const msgs = document.createElement('div'); msgs.className='chat-msgs admin-chat-msgs';
+  if(state.adminChatMsgs.length===0){
+    msgs.innerHTML = `<div class="empty">まだメッセージはありません。</div>`;
+  } else {
+    state.adminChatMsgs.forEach(msg => {
+      const b = document.createElement('div'); b.className='msg them';
+      b.innerHTML = `${escapeHtml(msg.text)}<div class="m-meta">${escapeHtml(msg.senderName)} ・ ${fmtTime(msg.ts)}</div>`;
+      msgs.appendChild(b);
+    });
+  }
+  box.appendChild(msgs);
+  el.innerHTML = '';
+  el.appendChild(box);
+}
+
+// 「登録→マッチ」「やり取り開始→マッチ」の所要時間を集計する（管理者限定）
+async function generateReport(){
+  state.report = undefined; // 生成中
+  render();
+  const rows = [];
+  const connectedConns = state.connections.filter(m => m.status==='connected');
+  for(const m of connectedConns){
+    const n = listingById(m.needId);
+    if(!n) continue;
+    let firstMsgTs = null;
+    try {
+      const msnap = await getDocs(query(collection(db,'connections', m.id, 'messages'), orderBy('ts','asc'), limit(1)));
+      if(!msnap.empty) firstMsgTs = msnap.docs[0].data().ts;
+    } catch(e){ /* 読めなければ空欄のまま */ }
+    rows.push({
+      title: m.title, kind: m.kind,
+      needCreatedAt: n.createdAt, proposedAt: m.createdAt,
+      matchedAt: m.matchedAt || null, firstMsgTs,
+    });
+  }
+  state.report = rows;
+  render();
+}
+
+function fmtDuration(ms){
+  if(ms===null || ms===undefined || ms<0) return '-';
+  const min = Math.round(ms/60000);
+  if(min < 60) return `${min}分`;
+  const hours = Math.floor(min/60), remMin = min%60;
+  if(hours < 24) return `${hours}時間${remMin}分`;
+  const days = Math.floor(hours/24), remHours = hours%24;
+  return `${days}日${remHours}時間`;
+}
+
+function renderReportResult(el){
+  if(!el) return;
+  if(state.report===undefined){ el.innerHTML = `<div class="empty">集計中…</div>`; return; }
+  if(state.report===null){ el.innerHTML = ''; return; }
+  const rows = state.report;
+  if(rows.length===0){ el.innerHTML = `<div class="empty">成立済みのつながりがまだありません。</div>`; return; }
+
+  const regToMatch = rows.map(r => r.matchedAt ? r.matchedAt - r.needCreatedAt : null).filter(v=>v!==null);
+  const talkToMatch = rows.map(r => (r.matchedAt && r.firstMsgTs) ? r.matchedAt - r.firstMsgTs : null).filter(v=>v!==null);
+  const avg = arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null;
+
+  const summary = document.createElement('div'); summary.className='stat-row';
+  summary.innerHTML = `
+    <div class="stat"><div class="v">${fmtDuration(avg(regToMatch))}</div><div class="l">平均：登録→マッチ成立（${regToMatch.length}件）</div></div>
+    <div class="stat"><div class="v">${fmtDuration(avg(talkToMatch))}</div><div class="l">平均：やり取り開始→マッチ成立（${talkToMatch.length}件）</div></div>
+  `;
+  const table = document.createElement('table'); table.className='ledger';
+  table.innerHTML = `<tr><th>内容</th><th>分類</th><th>登録→マッチ成立</th><th>やり取り開始→マッチ成立</th></tr>` +
+    rows.map(r => `<tr><td>${escapeHtml(r.title)}</td><td>${escapeHtml(r.kind)}</td><td>${r.matchedAt ? fmtDuration(r.matchedAt-r.needCreatedAt) : '- (成立日時が未記録)'}</td><td>${(r.matchedAt&&r.firstMsgTs) ? fmtDuration(r.matchedAt-r.firstMsgTs) : '-'}</td></tr>`).join('');
+  const tableWrap = document.createElement('div'); tableWrap.className='table-wrap'; tableWrap.appendChild(table);
+  el.innerHTML = '';
+  el.appendChild(summary);
+  el.appendChild(tableWrap);
 }
 
 function renderContentCell(l){

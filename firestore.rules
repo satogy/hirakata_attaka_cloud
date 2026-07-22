@@ -30,5 +30,22 @@ service cloud.firestore {
         allow create: if request.auth != null;
       }
     }
+
+    // 管理者（レポート機能・全チャット閲覧など）。
+    // 「マイページコード」はアプリ側の自己申告制であり、Firestoreルールから
+    // 検証できないため、Firebase Authの匿名UID（request.auth.uid）に紐づけて
+    // 管理する。ドキュメントIDが自分のuidと一致し、かつ合言葉が正しい場合のみ
+    // 自己登録できる（＝合言葉を知らない第三者はadminを名乗れない）。
+    // 合言葉はこのルールファイル自体に埋め込まれておりクライアントには一切
+    // 配信されないため、firebase-config.js内のACCESS_CODEより堅い。
+    // 一度登録すれば以降はこのブラウザ／端末のFirebase Authセッションが
+    // 続く限り管理者として扱われる（キャッシュ削除等で別のuidになった場合は
+    // 合言葉を入力して再登録が必要）。
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.claim == "hirakata-spiraq-admin-2026";
+      allow update, delete: if false;
+    }
   }
 }
