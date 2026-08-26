@@ -1,14 +1,15 @@
 :root{
-  --bg:            #FFF6EA;
+  /* 「たそがれ・シンプル」トンマナ：寒色の土台に、暖色の灯り */
+  --bg:            #F5F8FC;
   --bg-panel:      #FFFFFF;
-  --ink:           #4A3728;
-  --ink-soft:      #8C7863;
-  --line:          #F0DCC0;
+  --ink:           #333A4D;
+  --ink-soft:      #848C9E;
+  --line:          #E6EAF2;
 
-  --need:          #D9622E;   /* 困っています（支援がほしい） */
-  --need-soft:     #FBE3D2;
-  --offer:         #3E8E68;   /* 私にできること（支援します） */
-  --offer-soft:    #DCEFE3;
+  --need:          #E67E3C;   /* 困っています（支援がほしい） */
+  --need-soft:     #FCE7D4;
+  --offer:         #2E9464;   /* 私にできること（支援します） */
+  --offer-soft:    #DCF1E7;
 
   --urgent:        #C1392B;   /* 期限が近い（1〜2日） */
   --urgent-soft:   #FBDDD8;
@@ -18,7 +19,7 @@
   --calm-soft:     #E4EEE8;
 
   --radius: 14px;
-  --shadow: 0 3px 10px rgba(74,55,40,0.08);
+  --shadow: 0 3px 10px rgba(51,58,77,0.08);
   font-family: "BIZ UDPGothic", sans-serif;
 }
 *{box-sizing:border-box;}
