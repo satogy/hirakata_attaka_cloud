@@ -207,7 +207,11 @@ function listenConnections(){
 function listenChat(connId){
   if(state.chatUnsub) state.chatUnsub();
   const q = query(collection(db,'connections',connId,'messages'), orderBy('ts','asc'));
-  state.chatUnsub = onSnapshot(q, snap => { state.chatMsgs = snap.docs.map(d => ({ id:d.id, ...d.data() })); renderChatMessagesOnly(); });
+  state.chatUnsub = onSnapshot(q, snap => {
+    state.chatMsgs = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    renderChatMessagesOnly();
+    renderMatchControls();
+  });
 }
 
 async function saveProfile(){ await setDoc(doc(db,'profiles',state.profile.id), state.profile); }
@@ -552,11 +556,11 @@ function renderTag(l){
 // ---- connections ----
 function renderConnections(){
   const wrap = document.createElement('div');
-  wrap.innerHTML = `<h2>つながり一覧</h2><p class="sub">同じカテゴリの相手が見つかると自動で提案されます。距離が近い順に表示（あなたの登録が関わるものだけ）</p>`;
+  wrap.innerHTML = `<h2>つながり候補一覧</h2><p class="sub">同じカテゴリの相手が見つかると自動で候補にあがります。まだ「成立」ではありません — チャットでやり取りしてから、チャット画面で成立にできます。距離が近い順に表示（あなたの登録が関わるものだけ）</p>`;
   const list = document.createElement('div');
   const mine = myConnections().slice().sort((a,b)=>(a.distanceKm??1e9)-(b.distanceKm??1e9));
   if(mine.length===0){
-    list.innerHTML = `<div class="empty">まだつながりがありません。「登録する」から困りごと・できることを登録すると、同じカテゴリの相手が見つかった時に自動でここに表示されます。</div>`;
+    list.innerHTML = `<div class="empty">まだつながり候補がありません。「登録する」から困りごと・できることを登録すると、同じカテゴリの相手が見つかった時に自動でここに表示されます。</div>`;
   } else {
     mine.forEach(m => list.appendChild(renderConnCard(m)));
   }
@@ -579,11 +583,6 @@ function renderConnCard(m){
   const chatBtn = document.createElement('button'); chatBtn.className='btn-sm primary'; chatBtn.textContent='チャットする';
   chatBtn.onclick = () => { state.tab='chat'; state.activeConnId = m.id; render(); };
   actions.appendChild(chatBtn);
-  if(m.status!=='connected'){
-    const confirmBtn = document.createElement('button'); confirmBtn.className='btn-sm'; confirmBtn.textContent='つながり成立にする';
-    confirmBtn.onclick = async () => { await updateDoc(doc(db,'connections',m.id), {status:'connected', matchedAt: Date.now()}); };
-    actions.appendChild(confirmBtn);
-  }
   el.appendChild(sideN); el.appendChild(mid); el.appendChild(sideO); el.appendChild(actions);
   return el;
 }
@@ -597,7 +596,7 @@ function renderChatTab(){
   const mine = myConnections();
   if(!state.activeConnId && mine.length) state.activeConnId = mine[0].id;
   if(mine.length===0){
-    threads.innerHTML = `<div class="empty">つながりが成立するとここにスレッドが表示されます。</div>`;
+    threads.innerHTML = `<div class="empty">つながり候補ができるとここにスレッドが表示されます。</div>`;
   } else {
     mine.forEach(m => {
       const n = listingById(m.needId), o = listingById(m.offerId);
@@ -619,6 +618,7 @@ function renderChatTab(){
     if(m){
       body.innerHTML = `
         <div class="chat-msgs" id="msgsEl"><div class="empty">読み込み中…</div></div>
+        <div id="matchControls"></div>
         <div class="chat-input">
           <input type="text" id="chatText" placeholder="メッセージを入力…">
           <button id="chatSend">送信</button>
@@ -654,6 +654,32 @@ function renderChatMessagesOnly(){
     msgsEl.appendChild(b);
   });
   msgsEl.scrollTop = msgsEl.scrollHeight;
+}
+
+// つながり成立は、双方が最低1通ずつメッセージを送ってから、チャット画面でどちらか
+// 片方が押せば成立とする（両者必須にすると片方が忘れた時に永久に成立しなくなるため、
+// また被支援者限定にすると相手がアプリに戻ってこない限り成立しなくなるため）。
+function renderMatchControls(){
+  const el = document.getElementById('matchControls');
+  if(!el || !state.activeConnId) return;
+  const m = state.connections.find(x=>x.id===state.activeConnId);
+  if(!m) return;
+  if(m.status==='connected'){
+    el.innerHTML = `<div class="match-controls done">✓ つながり成立しています</div>`;
+    return;
+  }
+  const n = listingById(m.needId), o = listingById(m.offerId);
+  const bothTalked = n && o
+    && state.chatMsgs.some(msg=>msg.senderId===n.userId)
+    && state.chatMsgs.some(msg=>msg.senderId===o.userId);
+  if(bothTalked){
+    el.innerHTML = `<div class="match-controls ready"><button class="btn-sm primary" id="matchConfirmBtn">つながり成立にする</button></div>`;
+    el.querySelector('#matchConfirmBtn').onclick = async () => {
+      await updateDoc(doc(db,'connections',m.id), {status:'connected', matchedAt: Date.now()});
+    };
+  } else {
+    el.innerHTML = `<div class="match-controls hint">お互いにメッセージを送り合うと、ここに「つながり成立にする」ボタンが表示されます。</div>`;
+  }
 }
 
 // ---- coordinator (admin) ----

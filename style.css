@@ -157,6 +157,11 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);min-height:10
 .msg.me{ align-self:flex-end; background:var(--need); color:#fff; border-bottom-right-radius:3px; }
 .msg.them{ align-self:flex-start; background:var(--bg); border:1px solid var(--line); border-bottom-left-radius:3px; }
 .msg .m-meta{ font-size:9.5px; opacity:0.65; margin-top:3px; }
+.match-controls{ margin-top:10px; padding:9px 12px; border-radius:12px; font-size:11.5px; text-align:center; }
+.match-controls.hint{ background:var(--bg); color:var(--ink-soft); border:1px dashed var(--line); }
+.match-controls.ready{ background:none; padding:0; }
+.match-controls.ready .btn-sm{ width:100%; }
+.match-controls.done{ background:var(--offer-soft); color:var(--offer); font-weight:700; font-family:"Zen Maru Gothic"; font-size:12.5px; }
 .chat-input{ display:flex; gap:8px; margin-top:10px; }
 .chat-input input{ flex:1; padding:11px; border:1.5px solid var(--line); border-radius:20px; font-family:"BIZ UDPGothic"; font-size:13.5px;}
 .chat-input button{ padding:0 20px; border:none; background:var(--need); color:#fff; border-radius:20px; cursor:pointer; font-family:"Zen Maru Gothic"; font-weight:700; }
