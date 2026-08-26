@@ -572,7 +572,7 @@ function renderConnCard(m){
   const sideN = document.createElement('div'); sideN.className='side need';
   sideN.innerHTML = `<span class="kind">困っています</span><h4>${escapeHtml(n.title)}</h4><div class="m">${escapeHtml(n.userName)}</div>`;
   const mid = document.createElement('div'); mid.className='mid';
-  mid.innerHTML = `<div class="dist">${fmtDist(m.distanceKm)}</div><div>${m.connectedBy==='system' ? '自動提案' : 'つないだ人あり'}</div>`;
+  mid.innerHTML = `<div class="dist">${fmtDist(m.distanceKm)}</div><div>${m.connectedBy==='system' ? '自動提案（カテゴリ一致）' : 'つないだ人あり'}</div>`;
   const sideO = document.createElement('div'); sideO.className='side offer';
   sideO.innerHTML = `<span class="kind">できること</span><h4>${escapeHtml(o.title)}</h4><div class="m">${escapeHtml(o.userName)}</div>`;
   const actions = document.createElement('div'); actions.className='conn-actions';
@@ -750,7 +750,7 @@ function renderAdmin(){
   const connCols = state.isAdmin ? 8 : 7;
   wrap.querySelector('#connTable').innerHTML = `<tr><th>内容</th><th>困っている人</th><th>できる人</th><th>距離</th><th>つないだ人</th><th>つないだ日時</th><th>状態</th>${state.isAdmin?'<th>チャット</th>':''}</tr>` +
     (conns.map(m => { const n=listingById(m.needId), o=listingById(m.offerId);
-      const who = m.connectedBy==='system' ? '自動提案'
+      const who = m.connectedBy==='system' ? '自動提案（カテゴリ一致）'
         : m.connectedBy==='coordinator' ? `コーディネーター${m.connectedByName ? '：'+escapeHtml(m.connectedByName) : ''}`
         : (m.connectedByName ? escapeHtml(m.connectedByName)+'（本人）' : '本人');
       const chatCell = state.isAdmin ? `<td><button class="btn-sm view-chat-btn" data-conn="${m.id}">見る</button></td>` : '';
