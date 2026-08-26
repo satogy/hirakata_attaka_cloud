@@ -9,9 +9,8 @@ import {
 import { firebaseConfig, ACCESS_CODE } from "./firebase-config.js";
 
 const KINDS = {
-  "ヒト": { emoji:"👤", label:"ヒト（人の手を借りたい・貸したい）", subcats:["見守り・声かけ","話し相手","送迎","付き添い","子どもの見守り","その他"] },
-  "モノ": { emoji:"📦", label:"モノ（物資を届けたい・受け取りたい）", subcats:["食料","日用品","衣類","家具・家電","その他"] },
-  "コト": { emoji:"🛠️", label:"コト（作業や活動を手伝いたい・頼みたい）", subcats:["力仕事","買い物代行","掃除・片付け","庭仕事","行事の手伝い","その他"] },
+  "人手": { emoji:"🤝", label:"人手（人の手を借りたい・貸したい）", subcats:["見守り・声かけ","話し相手","送迎","付き添い","子どもの見守り","力仕事","買い物代行","掃除・片付け","庭仕事","行事の手伝い","その他"] },
+  "物資": { emoji:"📦", label:"物資（物資を届けたい・受け取りたい）", subcats:["食料","日用品","衣類","家具・家電","その他"] },
 };
 const KIND_KEYS = Object.keys(KINDS);
 const HIRAKATA_CENTER = { lat: 34.8147201, lng: 135.6487138 };
@@ -27,7 +26,7 @@ let state = {
   profile: null,
   tab: 'top',
   formMode: 'need',
-  formKind: 'ヒト',
+  formKind: '人手',
   listings: [],
   connections: [],
   activeConnId: null,
@@ -217,7 +216,7 @@ async function createListing(listing){
   await autoSuggestConnections(listing);
 }
 
-// 同じヒト・モノ・コト＋サブカテゴリの相手がいれば、候補としてつながりを自動提案する
+// 同じ人手・物資＋サブカテゴリの相手がいれば、候補としてつながりを自動提案する
 async function autoSuggestConnections(newListing){
   const opposite = newListing.mode === 'need' ? 'offer' : 'need';
   const candidates = state.listings.filter(l => l.mode===opposite && l.status==='open'
@@ -418,7 +417,7 @@ function renderRegister(){
   const kindInfo = KINDS[state.formKind];
   wrap.innerHTML = `
     <h2>登録する</h2>
-    <p class="sub">困っていること、できることを登録してください。「ヒト・モノ・コト」何でもOKです。</p>
+    <p class="sub">困っていること、できることを登録してください。「人手・物資」何でもOKです。</p>
     <div class="type-switch">
       <div class="type-btn need ${state.formMode==='need'?'active':''}" data-t="need">😟 困っています<br>（支援してほしい）</div>
       <div class="type-btn offer ${state.formMode==='offer'?'active':''}" data-t="offer">🙋 私にできること<br>（支援します）</div>
@@ -684,7 +683,7 @@ function renderAdmin(){
       </div>
     </div>
 
-    <div class="section-title"><span>ヒト・モノ・コト別 登録件数</span><span class="rule"></span></div>
+    <div class="section-title"><span>人手・物資別 登録件数</span><span class="rule"></span></div>
     <div class="bar-chart" id="barChart"></div>
 
     <div class="section-title"><span>登録データ一覧</span><span class="rule"></span><button class="export-btn" id="expListings">CSVエクスポート</button></div>

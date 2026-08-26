@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**ひらかたあったかクラウド (Hirakata Attaka Cloud)** — a small community mutual-aid marketplace board. Residents post things they need help with ("困っています") or things they can offer ("私にできること") across three categories: ヒト (人手/people), モノ (物資/goods), コト (作業/tasks). The app auto-suggests matches between opposite-mode listings in the same category, and a "coordinator" (admin) screen lets a human manually connect people, view stats, and export CSVs.
+**ひらかたあったかクラウド (Hirakata Attaka Cloud)** — a small community mutual-aid marketplace board. Residents post things they need help with ("困っています") or things they can offer ("私にできること") across two categories: 人手 (people/labor — formerly split into separate ヒト "people" and コト "tasks" categories, merged because users found that distinction confusing) and 物資 (goods, formerly labeled モノ). The app auto-suggests matches between opposite-mode listings in the same category, and a "coordinator" (admin) screen lets a human manually connect people, view stats, and export CSVs.
 
 This is a renamed/rebranded continuation of an earlier pilot called `monomatch-pilot` (see README.md) — the Firebase project is still named `monomatch-pilot` and the GitHub Pages URL may still reflect that name.
 
@@ -31,7 +31,7 @@ There are no lint/test/build commands to run — verify changes by loading the p
 
 **Firestore data model:**
 - `profiles/{profileId}` — `{ id, name, lat, lng, createdAt }`
-- `listings/{listingId}` — a need or offer: `{ id, userId, userName, mode: 'need'|'offer', kind: 'ヒト'|'モノ'|'コト', subcat, title, note, deadline, lat, lng, status: 'open'|..., createdAt }`
+- `listings/{listingId}` — a need or offer: `{ id, userId, userName, mode: 'need'|'offer', kind: '人手'|'物資', subcat, title, note, deadline, lat, lng, status: 'open'|..., createdAt }` — `kind` was `'ヒト'|'モノ'|'コト'` before the ヒト/コト merge; old records were migrated in place
 - `connections/{connId}` — a proposed/confirmed pairing between a need listing and an offer listing (renamed from `matches` in the previous `monomatch-pilot` version): `{ id, needId, offerId, title, kind, participants, distanceKm, status: 'proposed'|'connected', connectedBy: 'system'|'coordinator'|<profileId>, connectedByName, connectedAt, matchedAt, createdAt }` — `connectedByName` is the display name of whoever proposed the connection (null for `'system'` auto-suggestions), used in the coordinator screen's audit trail. `matchedAt` is set only when a participant clicks 「つながり成立にする」 (status flips to `'connected'`); older records predating this field will be missing it.
   - `connections/{connId}/messages/{messageId}` — chat subcollection: `{ senderId, senderName, text, ts }`
 - `admins/{authUid}` — presence of a doc keyed by the Firebase Auth anonymous UID marks that browser session as an admin: `{ claim, profileName, registeredAt }`. See "Admin role" below.
