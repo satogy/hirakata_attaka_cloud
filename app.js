@@ -780,7 +780,18 @@ function renderAdmin(){
         : m.connectedBy==='coordinator' ? `コーディネーター${m.connectedByName ? '：'+escapeHtml(m.connectedByName) : ''}`
         : (m.connectedByName ? escapeHtml(m.connectedByName)+'（本人）' : '本人');
       const chatCell = state.isAdmin ? `<td><button class="btn-sm view-chat-btn" data-conn="${m.id}">見る</button></td>` : '';
-      return `<tr><td>${escapeHtml(m.title)}</td><td>${n?escapeHtml(n.userName):'-'}</td><td>${o?escapeHtml(o.userName):'-'}</td><td>${fmtDist(m.distanceKm)}</td><td>${who}</td><td>${m.connectedBy==='system'?'-':fmtTime(m.connectedAt||m.createdAt)}</td><td><span class="pill ${m.status==='connected'?'connected':'open'}">${m.status==='connected'?'成立':'提案中'}</span></td>${chatCell}</tr>`; }).join('') || `<tr><td colspan="${connCols}">データがありません</td></tr>`);
+      const statusCell = m.status==='connected'
+        ? `<span class="pill connected">成立</span> <button class="btn-sm revert-match-btn" data-conn="${m.id}">戻す</button>`
+        : `<span class="pill open">提案中</span>`;
+      return `<tr><td>${escapeHtml(m.title)}</td><td>${n?escapeHtml(n.userName):'-'}</td><td>${o?escapeHtml(o.userName):'-'}</td><td>${fmtDist(m.distanceKm)}</td><td>${who}</td><td>${m.connectedBy==='system'?'-':fmtTime(m.connectedAt||m.createdAt)}</td><td>${statusCell}</td>${chatCell}</tr>`; }).join('') || `<tr><td colspan="${connCols}">データがありません</td></tr>`);
+
+  wrap.querySelectorAll('.revert-match-btn').forEach(b => {
+    b.onclick = async () => {
+      if(!confirm('この「成立」を取り消して、提案中に戻しますか？')) return;
+      await updateDoc(doc(db,'connections', b.dataset.conn), { status:'proposed', matchedAt: null });
+      render();
+    };
+  });
 
   wrap.querySelector('#expListings').onclick = () => exportCsv(['mode','title','kind','subcat','userName','deadline','status','createdAt'], listings, 'listings.csv');
   wrap.querySelector('#expConns').onclick = () => exportCsv(['title','needId','offerId','distanceKm','connectedBy','status','createdAt'], conns, 'connections.csv');
