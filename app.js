@@ -790,8 +790,9 @@ function renderAdmin(){
     barChart.appendChild(row);
   });
 
+  const dupSizes = duplicateGroupSizes(listings);
   wrap.querySelector('#listingTable').innerHTML = `<tr><th>種別</th><th>内容</th><th>分類</th><th>登録者</th><th>期限</th><th>状態</th><th>登録日時</th></tr>` +
-    (listings.map(l => `<tr><td>${l.mode==='need'?'困りごと':'できること'}</td><td>${renderContentCell(l)}</td><td>${escapeHtml(l.kind)}・${escapeHtml(l.subcat)}</td><td>${escapeHtml(l.userName)}</td><td>${l.deadline || '-'}</td><td><span class="pill ${l.status==='open'?'open':'connected'}">${l.status==='open'?'募集中':'成立'}</span></td><td>${fmtTime(l.createdAt)}</td></tr>`).join('') || `<tr><td colspan="7">データがありません</td></tr>`);
+    (listings.map(l => `<tr><td>${l.mode==='need'?'困りごと':'できること'}</td><td>${renderContentCell(l, dupSizes[l.id])}</td><td>${escapeHtml(l.kind)}・${escapeHtml(l.subcat)}</td><td>${escapeHtml(l.userName)}</td><td>${l.deadline || '-'}</td><td><span class="pill ${l.status==='open'?'open':'connected'}">${l.status==='open'?'募集中':'成立'}</span></td><td>${fmtTime(l.createdAt)}</td></tr>`).join('') || `<tr><td colspan="7">データがありません</td></tr>`);
 
   const connCols = state.isAdmin ? 8 : 7;
   wrap.querySelector('#connTable').innerHTML = `<tr><th>内容</th><th>困っている人</th><th>できる人</th><th>距離</th><th>つないだ人</th><th>つないだ日時</th><th>状態</th>${state.isAdmin?'<th>チャット</th>':''}</tr>` +
@@ -803,7 +804,9 @@ function renderAdmin(){
       const statusCell = m.status==='connected'
         ? `<span class="pill connected">成立</span> <button class="btn-sm revert-match-btn" data-conn="${m.id}">戻す</button>`
         : `<span class="pill open">提案中</span>`;
-      return `<tr><td>${escapeHtml(m.title)}</td><td>${n?escapeHtml(n.userName):'-'}</td><td>${o?escapeHtml(o.userName):'-'}</td><td>${fmtDist(m.distanceKm)}</td><td>${who}</td><td>${m.connectedBy==='system'?'-':fmtTime(m.connectedAt||m.createdAt)}</td><td>${statusCell}</td>${chatCell}</tr>`; }).join('') || `<tr><td colspan="${connCols}">データがありません</td></tr>`);
+      const needName = n ? escapeHtml(n.userName) + dupMark(dupSizes[n.id]) : '-';
+      const offerName = o ? escapeHtml(o.userName) + dupMark(dupSizes[o.id]) : '-';
+      return `<tr><td>${escapeHtml(m.title)}</td><td>${needName}</td><td>${offerName}</td><td>${fmtDist(m.distanceKm)}</td><td>${who}</td><td>${m.connectedBy==='system'?'-':fmtTime(m.connectedAt||m.createdAt)}</td><td>${statusCell}</td>${chatCell}</tr>`; }).join('') || `<tr><td colspan="${connCols}">データがありません</td></tr>`);
 
   wrap.querySelectorAll('.revert-match-btn').forEach(b => {
     b.onclick = async () => {
@@ -923,7 +926,23 @@ function renderReportResult(el){
   el.appendChild(tableWrap);
 }
 
-function renderContentCell(l){
+// 同じ登録者・同じ種別・同じカテゴリ・同じタイトルの登録が複数あるかを調べる。
+// 「私にもできそう」の連打や、うっかり複数回登録した際に、つながり候補一覧で
+// 似た内容の行が何件も並んで見えることがあるため、その場で気付けるようにする。
+function duplicateGroupSizes(listings){
+  const counts = {};
+  const keyOf = l => [l.userId, l.mode, l.kind, l.subcat, l.title].join('|');
+  listings.forEach(l => { const k = keyOf(l); counts[k] = (counts[k]||0) + 1; });
+  const sizeById = {};
+  listings.forEach(l => { sizeById[l.id] = counts[keyOf(l)]; });
+  return sizeById;
+}
+function dupMark(count){
+  if(!count || count<=1) return '';
+  return ` <span class="dup-badge" title="同じ登録者による同一内容の登録が他に${count-1}件あります">同一登録${count}件</span>`;
+}
+
+function renderContentCell(l, dupCount){
   const badge = l.mode==='need' ? deadlineBadge(l.deadline) : null;
   return `
     <span class="content-cell" tabindex="0">
@@ -935,7 +954,7 @@ function renderContentCell(l){
         <div class="cp-row">座標: ${l.lat ? l.lat.toFixed(4)+', '+l.lng.toFixed(4) : '未設定'}</div>
         <div class="cp-row">詳細メモ: ${l.note ? escapeHtml(l.note) : '（メモなし）'}</div>
       </div>
-    </span>`;
+    </span>${dupMark(dupCount)}`;
 }
 
 function exportCsv(cols, rows, filename){
