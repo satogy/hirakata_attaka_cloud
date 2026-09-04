@@ -599,10 +599,13 @@ function renderChatTab(){
   wrap.innerHTML = `<h2>チャット</h2><p class="sub">つながったお相手とリアルタイムでやり取りできます</p>`;
   const layout = document.createElement('div'); layout.className='chat-layout';
   const threads = document.createElement('div'); threads.className='chat-threads';
-  const mine = myConnections();
+  // チャットタブのスレッド一覧は、実際にやり取りが始まったものだけに絞る。
+  // 未接触の候補は「つながり」タブの「チャットする」から入る（そこでは
+  // state.activeConnIdを直接指定するので、この絞り込みの影響を受けない）。
+  const mine = myConnections().filter(m=>m.hasMessages);
   if(!state.activeConnId && mine.length) state.activeConnId = mine[0].id;
   if(mine.length===0){
-    threads.innerHTML = `<div class="empty">つながり候補ができるとここにスレッドが表示されます。</div>`;
+    threads.innerHTML = `<div class="empty">チャットが始まるとここにスレッドが表示されます。「つながり」タブの「チャットする」から始められます。</div>`;
   } else {
     mine.forEach(m => {
       const n = listingById(m.needId), o = listingById(m.offerId);
