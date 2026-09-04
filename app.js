@@ -242,6 +242,7 @@ async function proposeConnection(needL, offerL, connectedBy, connectedByName=nul
     title: needL.title, kind: needL.kind,
     participants: [needL.userId, offerL.userId],
     distanceKm: dist, status: 'proposed', connectedBy, connectedByName, connectedAt: Date.now(), createdAt: Date.now(),
+    hasMessages: false, // チャットが実際に始まったかどうか。コーディネーター画面の一覧はこれで絞り込む
   };
   state.connections.push(conn);
   await setDoc(doc(db,'connections',conn.id), conn);
@@ -652,6 +653,7 @@ function renderChatTab(){
         await addDoc(collection(db,'connections',m.id,'messages'), {
           senderId: state.profile.id, senderName: state.profile.name, text, ts: Date.now()
         });
+        if(!m.hasMessages) await updateDoc(doc(db,'connections',m.id), { hasMessages: true });
       };
       body.querySelector('#chatSend').onclick = send;
       body.querySelector('#chatText').addEventListener('keydown', e => { if(e.key==='Enter') send(); });
@@ -722,13 +724,8 @@ function renderAdmin(){
     </div>
 
     <div class="section-title"><span>手動でつなげる</span><span class="rule"></span></div>
-    <div class="connector-tool">
-      <div class="row">
-        <div class="field"><label>困りごとを選ぶ</label><select id="pickNeed"></select></div>
-        <div class="field"><label>できることを選ぶ</label><select id="pickOffer"></select></div>
-        <button id="connectBtn">つなげる</button>
-      </div>
-    </div>
+    <p class="sub">カテゴリが一致する困りごと・できることをまとめて表示しています。組み合わせを選んで「つなげる」を押してください。</p>
+    <div id="manualConnectGroups"></div>
 
     <div class="section-title"><span>お手伝い・寄付・場所提供別 登録件数</span><span class="rule"></span></div>
     <div class="bar-chart" id="barChart"></div>
@@ -737,6 +734,7 @@ function renderAdmin(){
     <div class="table-wrap"><table class="ledger" id="listingTable"></table></div>
 
     <div class="section-title"><span>つながり一覧</span><span class="rule"></span><button class="export-btn" id="expConns">CSVエクスポート</button></div>
+    <p class="sub" id="connFilterNote"></p>
     <div class="table-wrap"><table class="ledger" id="connTable"></table></div>
 
     ${state.isAdmin ? `
@@ -763,21 +761,45 @@ function renderAdmin(){
     `}
   `;
 
-  // 手動連携ツール
-  const needOpts = listings.filter(l=>l.mode==='need' && l.status==='open');
-  const offerOpts = listings.filter(l=>l.mode==='offer' && l.status==='open');
-  const pickNeed = wrap.querySelector('#pickNeed');
-  const pickOffer = wrap.querySelector('#pickOffer');
-  pickNeed.innerHTML = needOpts.map(n=>`<option value="${n.id}">${escapeHtml(n.title)}（${escapeHtml(n.userName)}）</option>`).join('') || `<option value="">困りごとがありません</option>`;
-  pickOffer.innerHTML = offerOpts.map(o=>`<option value="${o.id}">${escapeHtml(o.title)}（${escapeHtml(o.userName)}）</option>`).join('') || `<option value="">できることがありません</option>`;
-  wrap.querySelector('#connectBtn').onclick = async () => {
-    const nId = pickNeed.value, oId = pickOffer.value;
-    if(!nId || !oId){ alert('困りごとと、できることの両方を選んでください'); return; }
-    const n = listingById(nId), o = listingById(oId);
-    await proposeConnection(n, o, 'coordinator', state.profile.name);
-    alert('つなげました。「つながり」タブから確認できます。');
-    render();
-  };
+  // 手動連携ツール：カテゴリ（種別・サブカテゴリ）が一致する募集中の困りごと・できることを
+  // まとめて表示する。両方が揃っているカテゴリだけを対象にし、候補数が多い順に並べる。
+  const manualGroupsMap = {};
+  listings.filter(l=>l.status==='open').forEach(l=>{
+    const key = l.kind+'｜'+l.subcat;
+    if(!manualGroupsMap[key]) manualGroupsMap[key] = { kind:l.kind, subcat:l.subcat, needs:[], offers:[] };
+    manualGroupsMap[key][l.mode==='need' ? 'needs' : 'offers'].push(l);
+  });
+  const manualGroups = Object.values(manualGroupsMap)
+    .filter(g => g.needs.length>0 && g.offers.length>0)
+    .sort((a,b) => (b.needs.length+b.offers.length) - (a.needs.length+a.offers.length));
+
+  const groupsEl = wrap.querySelector('#manualConnectGroups');
+  if(manualGroups.length===0){
+    groupsEl.innerHTML = `<div class="empty">カテゴリが一致する困りごと・できることの組み合わせが今はありません。</div>`;
+  } else {
+    manualGroups.forEach(g => {
+      const box = document.createElement('div'); box.className='connector-tool';
+      box.innerHTML = `
+        <div class="cg-title">${KINDS[g.kind]?KINDS[g.kind].emoji:''} ${escapeHtml(g.kind)}・${escapeHtml(g.subcat)}
+          <span class="cg-count">困りごと${g.needs.length}件 ／ できること${g.offers.length}件</span></div>
+        <div class="row">
+          <div class="field"><label>困りごとを選ぶ</label><select class="cg-need"></select></div>
+          <div class="field"><label>できることを選ぶ</label><select class="cg-offer"></select></div>
+          <button class="cg-btn">つなげる</button>
+        </div>`;
+      const needSel = box.querySelector('.cg-need');
+      const offerSel = box.querySelector('.cg-offer');
+      needSel.innerHTML = g.needs.map(n=>`<option value="${n.id}">${escapeHtml(n.title)}（${escapeHtml(n.userName)}）</option>`).join('');
+      offerSel.innerHTML = g.offers.map(o=>`<option value="${o.id}">${escapeHtml(o.title)}（${escapeHtml(o.userName)}）</option>`).join('');
+      box.querySelector('.cg-btn').onclick = async () => {
+        const n = listingById(needSel.value), o = listingById(offerSel.value);
+        await proposeConnection(n, o, 'coordinator', state.profile.name);
+        alert('つなげました。「つながり」タブから確認できます。');
+        render();
+      };
+      groupsEl.appendChild(box);
+    });
+  }
 
   const catCounts = {}; KIND_KEYS.forEach(k=>catCounts[k]={need:0,offer:0});
   listings.forEach(l=>{ if(!catCounts[l.kind]) catCounts[l.kind]={need:0,offer:0}; catCounts[l.kind][l.mode]++; });
@@ -794,9 +816,17 @@ function renderAdmin(){
   wrap.querySelector('#listingTable').innerHTML = `<tr><th>種別</th><th>内容</th><th>分類</th><th>登録者</th><th>期限</th><th>状態</th><th>登録日時</th></tr>` +
     (listings.map(l => `<tr><td>${l.mode==='need'?'困りごと':'できること'}</td><td>${renderContentCell(l, dupSizes[l.id])}</td><td>${escapeHtml(l.kind)}・${escapeHtml(l.subcat)}</td><td>${escapeHtml(l.userName)}</td><td>${l.deadline || '-'}</td><td><span class="pill ${l.status==='open'?'open':'connected'}">${l.status==='open'?'募集中':'成立'}</span></td><td>${fmtTime(l.createdAt)}</td></tr>`).join('') || `<tr><td colspan="7">データがありません</td></tr>`);
 
+  // つながり一覧は「実際にチャットが始まったもの」だけに絞る。カテゴリ一致で自動提案
+  // されただけの未接触な候補まで並べると、1件の困りごとに何件もぶら下がって見づらいため。
+  const connsToShow = conns.filter(m => m.hasMessages);
+  const hiddenConnCount = conns.length - connsToShow.length;
+  wrap.querySelector('#connFilterNote').textContent = conns.length===0 ? ''
+    : hiddenConnCount>0 ? `チャットが始まっている${connsToShow.length}件のみ表示しています（チャット未開始の候補 ${hiddenConnCount}件は非表示）`
+    : 'チャットが始まっている候補のみ表示しています。';
+
   const connCols = state.isAdmin ? 8 : 7;
   wrap.querySelector('#connTable').innerHTML = `<tr><th>内容</th><th>困っている人</th><th>できる人</th><th>距離</th><th>つないだ人</th><th>つないだ日時</th><th>状態</th>${state.isAdmin?'<th>チャット</th>':''}</tr>` +
-    (conns.map(m => { const n=listingById(m.needId), o=listingById(m.offerId);
+    (connsToShow.map(m => { const n=listingById(m.needId), o=listingById(m.offerId);
       const who = m.connectedBy==='system' ? '自動提案（カテゴリ一致）'
         : m.connectedBy==='coordinator' ? `コーディネーター${m.connectedByName ? '：'+escapeHtml(m.connectedByName) : ''}`
         : (m.connectedByName ? escapeHtml(m.connectedByName)+'（本人）' : '本人');

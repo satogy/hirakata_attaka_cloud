@@ -207,6 +207,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);min-height:10
 .bar-fill{ height:100%; background:var(--offer); }
 
 .connector-tool{ background:var(--bg); border:1.5px dashed var(--line); border-radius:var(--radius); padding:16px; margin-bottom:10px; }
+.connector-tool .cg-title{ font-family:"Zen Maru Gothic"; font-weight:700; font-size:13px; margin-bottom:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.connector-tool .cg-count{ font-family:"BIZ UDPGothic"; font-weight:400; font-size:11px; color:var(--ink-soft); }
 .connector-tool .row{ display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
 .connector-tool .field{ flex:1; min-width:200px; margin-bottom:0; }
 .connector-tool select{ width:100%; padding:10px; border:1.5px solid var(--line); border-radius:10px; font-family:"BIZ UDPGothic"; }
