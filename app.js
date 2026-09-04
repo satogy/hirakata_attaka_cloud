@@ -334,8 +334,8 @@ function renderTop(){
   const wrap = document.createElement('div');
   const hero = document.createElement('div'); hero.className='hero';
   hero.innerHTML = `
-    <h1>今日の支援募集</h1>
-    <p>地域のみんなの「困った」が集まっています。見て「これなら自分にもできそう」と思ったら、気軽に声をかけてみてください。マッチしなくても大丈夫、コーディネーターがつなぎ役になります。</p>
+    <h1>みんなの支援募集</h1>
+    <p>地域のみんなの「困った」が集まっています。「これなら自分にもできそう」と思ったら、気軽に声をかけてみてください。マッチしなくても大丈夫、コーディネーターがつなぎ役になります。</p>
     <div class="cta-row">
       <button class="cta need" id="ctaNeed">困りごとを相談する</button>
       <button class="cta offer" id="ctaOffer">できることを登録する</button>
