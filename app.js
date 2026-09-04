@@ -233,7 +233,7 @@ async function autoSuggestConnections(newListing){
   }
 }
 
-async function proposeConnection(needL, offerL, connectedBy, connectedByName=null){
+async function proposeConnection(needL, offerL, connectedBy, connectedByName=null, connectorUserId=null){
   const dup = state.connections.find(m => m.needId===needL.id && m.offerId===offerL.id);
   if(dup) return dup;
   const dist = haversine(needL.lat, needL.lng, offerL.lat, offerL.lng);
@@ -243,6 +243,7 @@ async function proposeConnection(needL, offerL, connectedBy, connectedByName=nul
     participants: [needL.userId, offerL.userId],
     distanceKm: dist, status: 'proposed', connectedBy, connectedByName, connectedAt: Date.now(), createdAt: Date.now(),
     hasMessages: false, // チャットが実際に始まったかどうか。コーディネーター画面の一覧はこれで絞り込む
+    connectorUserId, // 手動でつないだコーディネーター自身のプロフィールID。本人もこのチャットに参加できるようにする
   };
   state.connections.push(conn);
   await setDoc(doc(db,'connections',conn.id), conn);
@@ -254,7 +255,7 @@ async function deleteListing(id){ await deleteDoc(doc(db,'listings',id)); }
 function myListings(){ return state.listings.filter(l=>l.userId===state.profile.id); }
 function myConnections(){
   const myIds = new Set(myListings().map(l=>l.id));
-  return state.connections.filter(m=>myIds.has(m.needId) || myIds.has(m.offerId));
+  return state.connections.filter(m=>myIds.has(m.needId) || myIds.has(m.offerId) || m.connectorUserId===state.profile.id);
 }
 function listingById(id){ return state.listings.find(l=>l.id===id); }
 
@@ -299,12 +300,13 @@ function renderHeader(){
 
 function renderTabs(){
   const wrap = document.createElement('div'); wrap.className='tabs';
-  const myC = myConnections().length;
+  const myConns = myConnections();
+  const myChatCount = myConns.filter(m=>m.hasMessages).length;
   const tabs = [
     {id:'top', label:'TOP'},
     {id:'register', label:'登録する'},
-    {id:'connections', label:'つながり', n: myC},
-    {id:'chat', label:'チャット', n: myC},
+    {id:'connections', label:'つながり', n: myConns.length},
+    {id:'chat', label:'チャット', n: myChatCount},
     {id:'admin', label:'コーディネーター'},
   ];
   tabs.forEach(t=>{
@@ -793,7 +795,7 @@ function renderAdmin(){
       offerSel.innerHTML = g.offers.map(o=>`<option value="${o.id}">${escapeHtml(o.title)}（${escapeHtml(o.userName)}）</option>`).join('');
       box.querySelector('.cg-btn').onclick = async () => {
         const n = listingById(needSel.value), o = listingById(offerSel.value);
-        await proposeConnection(n, o, 'coordinator', state.profile.name);
+        await proposeConnection(n, o, 'coordinator', state.profile.name, state.profile.id);
         alert('つなげました。「つながり」タブから確認できます。');
         render();
       };
