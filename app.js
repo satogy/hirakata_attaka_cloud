@@ -679,16 +679,43 @@ function renderChatTab(){
   return wrap;
 }
 
+// コーディネーターが参加すると1スレッドに3人以上が発言することがあり、「自分／それ以外」の
+// 2色だけでは誰の発言か分からなくなる。自分以外の送信者には登場順で固定の色を割り当てる。
+const CHAT_SENDER_COLORS = [
+  { bg:'#E3EEFB', ink:'#2E5C91' },
+  { bg:'#ECE6FB', ink:'#6B4FA0' },
+  { bg:'#FBE6EF', ink:'#A34D75' },
+  { bg:'#E1F3EE', ink:'#21806B' },
+  { bg:'#FBF0DC', ink:'#8A6417' },
+];
+function assignSenderColors(msgs, viewerId){
+  const map = {};
+  let i = 0;
+  msgs.forEach(msg => {
+    if(msg.senderId!==viewerId && !(msg.senderId in map)){
+      map[msg.senderId] = CHAT_SENDER_COLORS[i % CHAT_SENDER_COLORS.length];
+      i++;
+    }
+  });
+  return map;
+}
+function renderMsgBubble(msg, isMe, color){
+  const b = document.createElement('div');
+  b.className = 'msg ' + (isMe ? 'me' : 'them');
+  if(!isMe && color){ b.style.background = color.bg; b.style.color = color.ink; }
+  b.innerHTML = `${escapeHtml(msg.text)}<div class="m-meta">${escapeHtml(msg.senderName)} ・ ${fmtTime(msg.ts)}</div>`;
+  return b;
+}
+
 function renderChatMessagesOnly(){
   const msgsEl = document.getElementById('msgsEl');
   if(!msgsEl) return;
   msgsEl.innerHTML = '';
   if(state.chatMsgs.length===0){ msgsEl.innerHTML = `<div class="empty">まだメッセージはありません。挨拶してみましょう。</div>`; return; }
+  const colors = assignSenderColors(state.chatMsgs, state.profile.id);
   state.chatMsgs.forEach(msg => {
-    const b = document.createElement('div');
-    b.className = 'msg ' + (msg.senderId===state.profile.id ? 'me':'them');
-    b.innerHTML = `${escapeHtml(msg.text)}<div class="m-meta">${escapeHtml(msg.senderName)} ・ ${fmtTime(msg.ts)}</div>`;
-    msgsEl.appendChild(b);
+    const isMe = msg.senderId===state.profile.id;
+    msgsEl.appendChild(renderMsgBubble(msg, isMe, colors[msg.senderId]));
   });
   msgsEl.scrollTop = msgsEl.scrollHeight;
 }
@@ -901,10 +928,10 @@ function renderAdminChatViewer(el){
   if(state.adminChatMsgs.length===0){
     msgs.innerHTML = `<div class="empty">まだメッセージはありません。</div>`;
   } else {
+    // 管理者は閲覧者であって参加者ではないので「自分」扱いはせず、全員を送信者色で表示する
+    const colors = assignSenderColors(state.adminChatMsgs, null);
     state.adminChatMsgs.forEach(msg => {
-      const b = document.createElement('div'); b.className='msg them';
-      b.innerHTML = `${escapeHtml(msg.text)}<div class="m-meta">${escapeHtml(msg.senderName)} ・ ${fmtTime(msg.ts)}</div>`;
-      msgs.appendChild(b);
+      msgs.appendChild(renderMsgBubble(msg, false, colors[msg.senderId]));
     });
   }
   box.appendChild(msgs);
