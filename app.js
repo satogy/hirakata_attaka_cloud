@@ -337,13 +337,15 @@ function renderTop(){
   wrap.appendChild(feedTitle);
 
   const feed = document.createElement('div'); feed.className='need-feed';
+  // 期限が近い順。期限なしはその後ろ、期限切れは一番後ろ（切れて間もない順）に回す。
+  const deadlineSortKey = d => {
+    if(d===null) return 100000;
+    if(d<0) return 200000 - d;
+    return d;
+  };
   const needs = state.listings.filter(l=>l.mode==='need' && l.status==='open')
     .slice()
-    .sort((a,b)=>{
-      const da = daysLeft(a.deadline), db_ = daysLeft(b.deadline);
-      const na = da===null ? Infinity : da, nb = db_===null ? Infinity : db_;
-      return na - nb;
-    });
+    .sort((a,b)=> deadlineSortKey(daysLeft(a.deadline)) - deadlineSortKey(daysLeft(b.deadline)));
   if(needs.length===0){
     feed.innerHTML = `<div class="empty">今はまだ困りごとの登録がありません。最初の一件を登録してみませんか？</div>`;
   } else {
@@ -373,7 +375,8 @@ function renderNeedCard(n){
     </div>
   `;
   const actionRow = document.createElement('div');
-  actionRow.style.marginTop = '12px';
+  actionRow.style.marginTop = 'auto';
+  actionRow.style.paddingTop = '12px';
   const btn = document.createElement('button');
   btn.className = 'help-btn';
   btn.textContent = alreadyMine ? '自分の登録です' : '私にもできそう';
