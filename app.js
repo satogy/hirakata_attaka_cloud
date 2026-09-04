@@ -235,7 +235,17 @@ async function autoSuggestConnections(newListing){
 
 async function proposeConnection(needL, offerL, connectedBy, connectedByName=null, connectorUserId=null){
   const dup = state.connections.find(m => m.needId===needL.id && m.offerId===offerL.id);
-  if(dup) return dup;
+  if(dup){
+    // カテゴリが一致するペアはシステムが既に自動提案済みのことが多い（手動連携ツールは
+    // まさにそういうペアだけを表示する）。そこへ人が明示的に「つなげる」を押した場合は、
+    // 黙って既存レコードを返すだけでなく、その行為（つないだ人／参加者）を記録する。
+    if(connectedBy !== 'system' && (dup.connectedBy !== connectedBy || dup.connectorUserId !== connectorUserId)){
+      const patch = { connectedBy, connectedByName, connectorUserId };
+      await updateDoc(doc(db,'connections',dup.id), patch);
+      Object.assign(dup, patch);
+    }
+    return dup;
+  }
   const dist = haversine(needL.lat, needL.lng, offerL.lat, offerL.lng);
   const conn = {
     id: uid(), needId: needL.id, offerId: offerL.id,
