@@ -574,11 +574,11 @@ function renderConnCard(m){
   if(m.status==='connected'){ const st=document.createElement('div'); st.className='stamp'; st.textContent='つながり成立'; el.appendChild(st); }
   if(!n || !o){ el.innerHTML = `<div class="empty">相手側のデータが削除されました</div>`; return el; }
   const sideN = document.createElement('div'); sideN.className='side need';
-  sideN.innerHTML = `<span class="kind">困っています</span><h4>${escapeHtml(n.title)}</h4><div class="m">${escapeHtml(n.userName)}</div>`;
+  sideN.innerHTML = `<span class="kind">困っています</span><h4>${escapeHtml(n.title)}</h4><div class="m">${escapeHtml(n.userName)}</div>${n.note ? `<div class="note">${escapeHtml(n.note)}</div>` : ''}`;
   const mid = document.createElement('div'); mid.className='mid';
   mid.innerHTML = `<div class="dist">${fmtDist(m.distanceKm)}</div><div>${m.connectedBy==='system' ? '自動提案（カテゴリ一致）' : 'つないだ人あり'}</div>`;
   const sideO = document.createElement('div'); sideO.className='side offer';
-  sideO.innerHTML = `<span class="kind">できること</span><h4>${escapeHtml(o.title)}</h4><div class="m">${escapeHtml(o.userName)}</div>`;
+  sideO.innerHTML = `<span class="kind">できること</span><h4>${escapeHtml(o.title)}</h4><div class="m">${escapeHtml(o.userName)}</div>${o.note ? `<div class="note">${escapeHtml(o.note)}</div>` : ''}`;
   const actions = document.createElement('div'); actions.className='conn-actions';
   const chatBtn = document.createElement('button'); chatBtn.className='btn-sm primary'; chatBtn.textContent='チャットする';
   chatBtn.onclick = () => { state.tab='chat'; state.activeConnId = m.id; render(); };
@@ -616,7 +616,24 @@ function renderChatTab(){
   if(state.activeConnId){
     const m = state.connections.find(x=>x.id===state.activeConnId);
     if(m){
+      const n = listingById(m.needId), o = listingById(m.offerId);
+      const summaryHtml = (n && o) ? `
+        <div class="chat-summary">
+          <div class="cs-side need">
+            <span class="kind">困っています</span>
+            <h4>${escapeHtml(n.title)}</h4>
+            <div class="m">${escapeHtml(n.userName)}</div>
+            ${n.note ? `<div class="note">${escapeHtml(n.note)}</div>` : ''}
+          </div>
+          <div class="cs-side offer">
+            <span class="kind">できること</span>
+            <h4>${escapeHtml(o.title)}</h4>
+            <div class="m">${escapeHtml(o.userName)}</div>
+            ${o.note ? `<div class="note">${escapeHtml(o.note)}</div>` : ''}
+          </div>
+        </div>` : '';
       body.innerHTML = `
+        ${summaryHtml}
         <div class="chat-msgs" id="msgsEl"><div class="empty">読み込み中…</div></div>
         <div id="matchControls"></div>
         <div class="chat-input">

@@ -136,6 +136,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);min-height:10
 .conn-card .side.offer .kind{ color:var(--offer); }
 .conn-card .side h4{ font-family:"Zen Maru Gothic"; font-size:14.5px; margin:3px 0; }
 .conn-card .side .m{ font-size:11px; color:var(--ink-soft); }
+.conn-card .side .note{ font-size:11.5px; color:var(--ink-soft); margin-top:5px; line-height:1.6; }
 .conn-card .mid{ display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:11px; color:var(--ink-soft); width:100px; flex-shrink:0; text-align:center; }
 .conn-card .mid .dist{ font-family:"Zen Maru Gothic"; font-size:15px; font-weight:700; color:var(--ink); }
 .conn-card .stamp{ position:absolute; top:10px; right:14px; background:var(--offer); color:#fff; font-family:"Zen Maru Gothic"; font-weight:700; font-size:10.5px; padding:3px 12px; border-radius:12px; }
@@ -152,6 +153,14 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);min-height:10
 .thread-item .t-title{ font-weight:700; font-family:"Zen Maru Gothic"; }
 .thread-item .t-sub{ font-size:10.5px; color:var(--ink-soft); }
 .chat-body{ display:flex; flex-direction:column; }
+.chat-summary{ display:flex; gap:12px; padding-bottom:12px; margin-bottom:10px; border-bottom:1.5px solid var(--line); flex-wrap:wrap; }
+.chat-summary .cs-side{ flex:1; min-width:160px; }
+.chat-summary .cs-side .kind{ font-family:"Zen Maru Gothic"; font-weight:700; font-size:10.5px; }
+.chat-summary .cs-side.need .kind{ color:var(--need); }
+.chat-summary .cs-side.offer .kind{ color:var(--offer); }
+.chat-summary .cs-side h4{ font-family:"Zen Maru Gothic"; font-size:13.5px; margin:3px 0; }
+.chat-summary .cs-side .m{ font-size:10.5px; color:var(--ink-soft); }
+.chat-summary .cs-side .note{ font-size:11px; color:var(--ink-soft); margin-top:4px; line-height:1.6; }
 .chat-msgs{ flex:1; overflow-y:auto; max-height:360px; padding:6px 4px; display:flex; flex-direction:column; gap:8px; }
 .msg{ max-width:75%; padding:9px 13px; border-radius:14px; font-size:13px; line-height:1.5; }
 .msg.me{ align-self:flex-end; background:var(--need); color:#fff; border-bottom-right-radius:3px; }
@@ -219,6 +228,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);min-height:10
   .chat-layout{ grid-template-columns:1fr; }
   .chat-threads{ border-right:none; border-bottom:1px solid var(--line); padding-right:0; padding-bottom:10px; }
   .conn-card{ flex-direction:column; }
+  .chat-summary{ flex-direction:column; gap:10px; }
   .need-card{ padding-left:18px; }
   .need-card .kind-glow{ position:static; margin-bottom:8px; }
 }
