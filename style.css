@@ -71,7 +71,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);min-height:10
 .need-feed{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; align-items:stretch; }
 .need-card{ position:relative; background:#fff; border:1px solid var(--line); border-radius: var(--radius); padding:18px; box-shadow:var(--shadow); display:flex; flex-direction:column; }
 .need-card .kind-glow{ width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:18px; background:var(--need-soft); margin-bottom:10px; }
-.need-card .top-row{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap; }
+.need-card .badge-deadline{ position:absolute; top:18px; right:18px; }
+.need-card .top-row{ padding-right:76px; }
 .need-card h3{ font-family:"Zen Maru Gothic"; font-size:16.5px; margin:0 0 5px; }
 .need-card .cat{ font-size:11.5px; color:var(--ink-soft); margin-bottom:6px; }
 .need-card .note{ font-size:12.5px; color:var(--ink-soft); margin-top:6px; line-height:1.6; }

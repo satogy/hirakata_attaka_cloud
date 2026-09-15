@@ -374,13 +374,13 @@ function renderNeedCard(n){
   const kindInfo = KINDS[n.kind] || {emoji:'💡'};
   const alreadyMine = n.userId === state.profile.id;
   el.innerHTML = `
+    <span class="badge-deadline ${badge.cls}">${badge.text}</span>
     <div class="kind-glow">${kindInfo.emoji}</div>
     <div class="top-row">
       <div>
         <h3>${escapeHtml(n.title)}</h3>
         <div class="cat">${escapeHtml(n.kind)}・${escapeHtml(n.subcat)} ／ ${escapeHtml(n.userName)}さんより</div>
       </div>
-      <span class="badge-deadline ${badge.cls}">${badge.text}</span>
     </div>
     ${n.note ? `<div class="note">${escapeHtml(n.note)}</div>` : ''}
     <div class="meta-row">
