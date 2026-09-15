@@ -772,14 +772,14 @@ function renderAdmin(){
     <div class="section-title"><span>お手伝い・寄付・場所提供別 登録件数</span><span class="rule"></span></div>
     <div class="bar-chart" id="barChart"></div>
 
-    <div class="section-title"><span>登録データ一覧</span><span class="rule"></span><button class="export-btn" id="expListings">CSVエクスポート</button></div>
-    <div class="table-wrap"><table class="ledger" id="listingTable"></table></div>
-
-    <div class="section-title"><span>つながり一覧</span><span class="rule"></span><button class="export-btn" id="expConns">CSVエクスポート</button></div>
-    <p class="sub" id="connFilterNote"></p>
-    <div class="table-wrap"><table class="ledger" id="connTable"></table></div>
-
     ${state.isAdmin ? `
+      <div class="section-title admin-section"><span>🔒 登録データ一覧</span><span class="rule"></span><button class="export-btn" id="expListings">CSVエクスポート</button></div>
+      <div class="table-wrap"><table class="ledger" id="listingTable"></table></div>
+
+      <div class="section-title admin-section"><span>🔒 つながり一覧</span><span class="rule"></span><button class="export-btn" id="expConns">CSVエクスポート</button></div>
+      <p class="sub" id="connFilterNote"></p>
+      <div class="table-wrap"><table class="ledger" id="connTable"></table></div>
+
       <div class="section-title admin-section"><span>🔒 管理者レポート</span><span class="rule"></span></div>
       <div class="admin-report">
         <p class="sub">マッチまでにかかった時間を集計します（登録日時／やり取り開始日時はチャットのメッセージ送受信履歴から算出）。</p>
@@ -793,7 +793,7 @@ function renderAdmin(){
     ` : `
       <div class="section-title admin-section"><span>🔒 管理者レポート</span><span class="rule"></span></div>
       <div class="admin-gate">
-        <p class="sub">チャット閲覧・マッチ時間レポートは管理者限定です。合言葉を入力してください。</p>
+        <p class="sub">管理者限定です。合言葉を入力してください。</p>
         <div class="row">
           <input type="password" id="adminSecretInput" placeholder="管理者用の合言葉">
           <button id="adminLoginBtn">認証する</button>
@@ -854,6 +854,13 @@ function renderAdmin(){
     barChart.appendChild(row);
   });
 
+  if(!state.isAdmin){
+    wrap.querySelector('#adminLoginBtn').onclick = () => adminLogin(wrap.querySelector('#adminSecretInput').value.trim());
+    wrap.querySelector('#adminSecretInput').addEventListener('keydown', e => { if(e.key==='Enter') adminLogin(wrap.querySelector('#adminSecretInput').value.trim()); });
+    return wrap;
+  }
+
+  // ここから先（登録データ一覧・つながり一覧・レポート・チャット閲覧）は管理者限定
   const dupSizes = duplicateGroupSizes(listings);
   wrap.querySelector('#listingTable').innerHTML = `<tr><th>種別</th><th>内容</th><th>分類</th><th>登録者</th><th>期限</th><th>状態</th><th>登録日時</th></tr>` +
     (listings.map(l => `<tr><td>${l.mode==='need'?'困りごと':'できること'}</td><td>${renderContentCell(l, dupSizes[l.id])}</td><td>${escapeHtml(l.kind)}・${escapeHtml(l.subcat)}</td><td>${escapeHtml(l.userName)}</td><td>${l.deadline || '-'}</td><td><span class="pill ${l.status==='open'?'open':'connected'}">${l.status==='open'?'募集中':'成立'}</span></td><td>${fmtTime(l.createdAt)}</td></tr>`).join('') || `<tr><td colspan="7">データがありません</td></tr>`);
@@ -866,19 +873,18 @@ function renderAdmin(){
     : hiddenConnCount>0 ? `チャットが始まっている${connsToShow.length}件のみ表示しています（チャット未開始の候補 ${hiddenConnCount}件は非表示）`
     : 'チャットが始まっている候補のみ表示しています。';
 
-  const connCols = state.isAdmin ? 8 : 7;
-  wrap.querySelector('#connTable').innerHTML = `<tr><th>内容</th><th>困っている人</th><th>できる人</th><th>距離</th><th>つないだ人</th><th>つないだ日時</th><th>状態</th>${state.isAdmin?'<th>チャット</th>':''}</tr>` +
+  wrap.querySelector('#connTable').innerHTML = `<tr><th>内容</th><th>困っている人</th><th>できる人</th><th>距離</th><th>つないだ人</th><th>つないだ日時</th><th>状態</th><th>チャット</th></tr>` +
     (connsToShow.map(m => { const n=listingById(m.needId), o=listingById(m.offerId);
       const who = m.connectedBy==='system' ? '自動提案（カテゴリ一致）'
         : m.connectedBy==='coordinator' ? `コーディネーター${m.connectedByName ? '：'+escapeHtml(m.connectedByName) : ''}`
         : (m.connectedByName ? escapeHtml(m.connectedByName)+'（本人）' : '本人');
-      const chatCell = state.isAdmin ? `<td><button class="btn-sm view-chat-btn" data-conn="${m.id}">見る</button></td>` : '';
+      const chatCell = `<td><button class="btn-sm view-chat-btn" data-conn="${m.id}">見る</button></td>`;
       const statusCell = m.status==='connected'
         ? `<span class="pill connected">成立</span> <button class="btn-sm revert-match-btn" data-conn="${m.id}">戻す</button>`
         : `<span class="pill open">提案中</span>`;
       const needName = n ? escapeHtml(n.userName) + dupMark(dupSizes[n.id]) : '-';
       const offerName = o ? escapeHtml(o.userName) + dupMark(dupSizes[o.id]) : '-';
-      return `<tr><td>${escapeHtml(m.title)}</td><td>${needName}</td><td>${offerName}</td><td>${fmtDist(m.distanceKm)}</td><td>${who}</td><td>${m.connectedBy==='system'?'-':fmtTime(m.connectedAt||m.createdAt)}</td><td>${statusCell}</td>${chatCell}</tr>`; }).join('') || `<tr><td colspan="${connCols}">データがありません</td></tr>`);
+      return `<tr><td>${escapeHtml(m.title)}</td><td>${needName}</td><td>${offerName}</td><td>${fmtDist(m.distanceKm)}</td><td>${who}</td><td>${m.connectedBy==='system'?'-':fmtTime(m.connectedAt||m.createdAt)}</td><td>${statusCell}</td>${chatCell}</tr>`; }).join('') || `<tr><td colspan="8">データがありません</td></tr>`);
 
   wrap.querySelectorAll('.revert-match-btn').forEach(b => {
     b.onclick = async () => {
@@ -891,18 +897,13 @@ function renderAdmin(){
   wrap.querySelector('#expListings').onclick = () => exportCsv(['mode','title','kind','subcat','userName','deadline','status','createdAt'], listings, 'listings.csv');
   wrap.querySelector('#expConns').onclick = () => exportCsv(['title','needId','offerId','distanceKm','connectedBy','status','createdAt'], conns, 'connections.csv');
 
-  if(!state.isAdmin){
-    wrap.querySelector('#adminLoginBtn').onclick = () => adminLogin(wrap.querySelector('#adminSecretInput').value.trim());
-    wrap.querySelector('#adminSecretInput').addEventListener('keydown', e => { if(e.key==='Enter') adminLogin(wrap.querySelector('#adminSecretInput').value.trim()); });
-  } else {
-    wrap.querySelectorAll('.view-chat-btn').forEach(b => {
-      b.onclick = () => { state.adminChatOpenId = b.dataset.conn; listenAdminChat(b.dataset.conn); render(); };
-    });
-    renderAdminChatViewer(wrap.querySelector('#adminChatViewer'));
+  wrap.querySelectorAll('.view-chat-btn').forEach(b => {
+    b.onclick = () => { state.adminChatOpenId = b.dataset.conn; listenAdminChat(b.dataset.conn); render(); };
+  });
+  renderAdminChatViewer(wrap.querySelector('#adminChatViewer'));
 
-    wrap.querySelector('#genReportBtn').onclick = () => generateReport();
-    renderReportResult(wrap.querySelector('#reportResult'));
-  }
+  wrap.querySelector('#genReportBtn').onclick = () => generateReport();
+  renderReportResult(wrap.querySelector('#reportResult'));
 
   return wrap;
 }
