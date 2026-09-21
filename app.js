@@ -7,6 +7,7 @@ import {
   query, orderBy, limit, updateDoc, deleteDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, ACCESS_CODE } from "./firebase-config.js";
+import { initSubsidy, setSubsidyMeta, renderSubsidyTab, isSubsidyEditing } from "./subsidy.js";
 
 const KINDS = {
   "お手伝い": { emoji:"🤝", label:"お手伝い（人の手を借りたい・貸したい）", subcats:["見守り・声かけ","話し相手","送迎","付き添い","子どもの見守り","力仕事","買い物代行","掃除・片付け","庭仕事","行事の手伝い","その他"] },
@@ -167,12 +168,27 @@ async function boot(){
   }
   renderGate();
 }
-boot();
-
 function startApp(){
   listenListings(); listenConnections(); render();
   checkAdminStatus();
+  loadSubsidyMeta();
 }
+
+// 補助金ガイド：市が登録した募集要項PDFのURLなど。firestore.rulesにsubsidyProgramsが未デプロイでも
+// 読めないだけで、ガイド自体は（PDFリンク無しで）動く。
+const SUBSIDY_DOC = ['subsidyPrograms','hirakata-kodomo-2026'];
+initSubsidy({
+  isAdmin: () => state.isAdmin,
+  saveMeta: meta => setDoc(doc(db, ...SUBSIDY_DOC), { ...meta, updatedAt: Date.now() }),
+});
+async function loadSubsidyMeta(){
+  try {
+    const snap = await getDoc(doc(db, ...SUBSIDY_DOC));
+    if(snap.exists()){ setSubsidyMeta(snap.data()); if(state.tab==='subsidy') render(); }
+  } catch(e) { /* ルール未デプロイ時など。PDFリンクなしで表示する */ }
+}
+
+boot();
 
 async function checkAdminStatus(){
   try {
@@ -270,7 +286,19 @@ function myConnections(){
 function listingById(id){ return state.listings.find(l=>l.id===id); }
 
 // ---------------- render root ----------------
+let renderDeferred = false;
 function render(){
+  // 補助金の入力中にFirestoreの更新で画面を作り直すと、入力欄のフォーカスが外れて打てなくなるので、
+  // 入力が終わる（フォーカスが外れる）まで待つ
+  if(state.tab==='subsidy' && isSubsidyEditing()){
+    if(!renderDeferred){
+      renderDeferred = true;
+      document.addEventListener('focusout', () => setTimeout(() => {
+        if(!isSubsidyEditing()){ renderDeferred = false; render(); }
+      }, 0), { once: true });
+    }
+    return;
+  }
   root.innerHTML = '';
   const wrap = document.createElement('div'); wrap.className='app';
   wrap.appendChild(renderHeader());
@@ -282,6 +310,7 @@ function render(){
     if(state.tab==='register') panel.appendChild(renderRegister());
     else if(state.tab==='connections') panel.appendChild(renderConnections());
     else if(state.tab==='chat') panel.appendChild(renderChatTab());
+    else if(state.tab==='subsidy') panel.appendChild(renderSubsidyTab());
     else if(state.tab==='admin') panel.appendChild(renderAdmin());
   }
   wrap.appendChild(panel);
@@ -317,6 +346,7 @@ function renderTabs(){
     {id:'register', label:'登録する'},
     {id:'connections', label:'つながり', n: myConns.length},
     {id:'chat', label:'チャット', n: myChatCount},
+    {id:'subsidy', label:'補助金'},
     {id:'admin', label:'コーディネーター'},
   ];
   tabs.forEach(t=>{
