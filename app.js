@@ -49,6 +49,8 @@ let state = {
   kpiSettings: null, staffLogs: null, kpiLoading: false, // 実証KPIの設定と、職員の対応ログ（管理者のみ）
 };
 const MAX_AUTO_SUGGEST = 10; // 新規登録時に自動提案する相手の上限（近い順）
+// 補助金ガイド（subsidy.js）のタブの表示。実証では一旦非表示にしている（機能とデータはそのまま。trueに戻せば再表示）。
+const SHOW_SUBSIDY = false;
 
 const root = document.getElementById('root');
 
@@ -226,7 +228,7 @@ async function boot(){
 function startApp(){
   listenListings(); listenConnections(); render();
   checkAdminStatus();
-  loadSubsidyMeta();
+  if(SHOW_SUBSIDY) loadSubsidyMeta();
   if(!state.profile.orgType) setTimeout(promptOrgType, 600);
 }
 
@@ -487,7 +489,7 @@ function render(){
     if(state.tab==='register') panel.appendChild(renderRegister());
     else if(state.tab==='connections') panel.appendChild(renderConnections());
     else if(state.tab==='chat') panel.appendChild(renderChatTab());
-    else if(state.tab==='subsidy') panel.appendChild(renderSubsidyTab());
+    else if(state.tab==='subsidy' && SHOW_SUBSIDY) panel.appendChild(renderSubsidyTab());
     else if(state.tab==='admin') panel.appendChild(renderAdmin());
   }
   wrap.appendChild(panel);
@@ -525,7 +527,7 @@ function renderTabs(){
     {id:'register', label:'登録する'},
     {id:'connections', label:'つながり', n: myConns.length},
     {id:'chat', label:'チャット', n: myChatCount},
-    {id:'subsidy', label:'補助金'},
+    ...(SHOW_SUBSIDY ? [{id:'subsidy', label:'補助金'}] : []),
     {id:'admin', label:'コーディネーター'},
   ];
   tabs.forEach(t=>{
