@@ -8,6 +8,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, ACCESS_CODE } from "./firebase-config.js";
 import { initSubsidy, setSubsidyMeta, renderSubsidyTab, isSubsidyEditing } from "./subsidy.js";
+import { DISTRICTS, DISTRICT_UNKNOWN, districtOptionsHtml, renderDistrictDashboard } from "./districts.js";
 
 const KINDS = {
   "お手伝い": { emoji:"🤝", label:"お手伝い（人の手を借りたい・貸したい）", subcats:["見守り・声かけ","話し相手","送迎","付き添い","子どもの見守り","力仕事","買い物代行","掃除・片付け","庭仕事","行事の手伝い","その他"] },
@@ -43,6 +44,7 @@ let state = {
   adminConns: [],        // 管理者用：チャットが始まった／成立したつながり（コーディネーター画面を開いている間だけ購読）
   adminConnUnsubs: [],
   stats: null, statsAt: 0, statsLoading: false, // つながりの件数（count集計）
+  districtInfo: null, districtInfoLoading: false, // 校区ごとの子ども食堂の設置数 {校区名: 数}
 };
 const MAX_AUTO_SUGGEST = 10; // 新規登録時に自動提案する相手の上限（近い順）
 
@@ -283,6 +285,18 @@ function detachAdminConnections(){
   state.adminConnUnsubs = []; state.adminConns = [];
 }
 
+// 各校区の子ども食堂の設置数（市が把握している数。管理者が入力）。1ドキュメントを1回だけ読む。
+async function loadDistrictInfo(){
+  if(state.districtInfo || state.districtInfoLoading) return;
+  state.districtInfoLoading = true;
+  try {
+    const snap = await getDoc(doc(db,'districtInfo','main'));
+    state.districtInfo = snap.exists() ? (snap.data().shokudo || {}) : {};
+  } catch(e) { state.districtInfo = {}; } // ルール未反映時など。全校区「未入力」として表示する
+  state.districtInfoLoading = false;
+  render();
+}
+
 // コーディネーター画面の統計。件数を数えるクエリは、ドキュメントを読まずに済み、読み取り課金が
 // 1000件あたり1回分で済む。候補は大量になりうるので、全件を読まずにここで数える。
 async function loadConnStats(){
@@ -388,11 +402,13 @@ let renderDeferred = false;
 function render(){
   // 補助金の入力中にFirestoreの更新で画面を作り直すと、入力欄のフォーカスが外れて打てなくなるので、
   // 入力が終わる（フォーカスが外れる）まで待つ
-  if(state.tab==='subsidy' && isSubsidyEditing()){
+  const editingGuarded = () => (state.tab==='subsidy' && isSubsidyEditing())
+    || (state.tab==='admin' && document.activeElement && document.activeElement.classList.contains('dd-input'));
+  if(editingGuarded()){
     if(!renderDeferred){
       renderDeferred = true;
       document.addEventListener('focusout', () => setTimeout(() => {
-        if(!isSubsidyEditing()){ renderDeferred = false; render(); }
+        if(!editingGuarded()){ renderDeferred = false; render(); }
       }, 0), { once: true });
     }
     return;
@@ -510,7 +526,7 @@ function renderNeedCard(n){
     <div class="top-row">
       <div>
         <h3>${escapeHtml(n.title)}</h3>
-        <div class="cat">${escapeHtml(n.kind)}・${escapeHtml(n.subcat)} ／ ${escapeHtml(n.userName)}さんより</div>
+        <div class="cat">${escapeHtml(n.kind)}・${escapeHtml(n.subcat)}${n.district && n.district!==DISTRICT_UNKNOWN ? '・'+escapeHtml(n.district)+'校区' : ''} ／ ${escapeHtml(n.userName)}さんより</div>
       </div>
     </div>
     ${n.note ? `<div class="note">${escapeHtml(n.note)}</div>` : ''}
@@ -536,7 +552,7 @@ async function onOfferToHelp(need){
   // その場で簡易オファーを登録し、つながりを提案する
   const offerListing = {
     id: uid(), userId: state.profile.id, userName: state.profile.name, mode: 'offer',
-    kind: need.kind, subcat: need.subcat,
+    kind: need.kind, subcat: need.subcat, district: state.profile.district || DISTRICT_UNKNOWN,
     title: `「${need.title}」に対応します`,
     note: '', lat: state.profile.lat, lng: state.profile.lng,
     status: 'open', createdAt: Date.now(), quickOffer: true,
@@ -586,6 +602,10 @@ function renderRegister(){
           <select name="subcat">${kindInfo.subcats.map(c=>`<option>${c}</option>`).join('')}</select>
         </div>
         <div class="field"><label>期限（任意）</label><input name="deadline" type="date"></div>
+      </div>
+      <div class="field"><label>どの校区のことですか？（小学校区）</label>
+        <select name="district" required>${districtOptionsHtml(state.profile.district || '')}</select>
+        <div class="geo-status">市が、校区ごとの支援の状況を把握するために使います。わからないときは「市外・わからない」を選んでください。</div>
       </div>
       <div class="loc-row">
         <div class="field"><label>緯度</label><input name="lat" id="latInput" placeholder="例）35.658"></div>
@@ -656,12 +676,17 @@ function renderRegister(){
     const listing = {
       id: uid(), userId: state.profile.id, userName: state.profile.name, mode: state.formMode,
       kind: state.formKind, subcat: f.get('subcat'),
+      district: f.get('district') || DISTRICT_UNKNOWN,
       title: f.get('title').trim(),
       deadline: f.get('deadline') || null,
       lat: f.get('lat') ? Number(f.get('lat')) : null, lng: f.get('lng') ? Number(f.get('lng')) : null,
       note: f.get('note').trim(), status: 'open', createdAt: Date.now(),
     };
     await createListing(listing);
+    if(listing.district !== DISTRICT_UNKNOWN && state.profile.district !== listing.district){
+      state.profile.district = listing.district; // 次回からこの校区を最初から選んでおく
+      await saveProfile();
+    }
     state.geoStatus = '';
     state.tab = 'top';
     render();
@@ -912,6 +937,9 @@ function renderAdmin(){
 
     ${state.isAdmin ? `
       <p class="sub">管理者としてログイン中です。<button class="export-btn" id="adminLogoutBtn">ログアウト</button></p>
+      <div class="section-title admin-section"><span>🔒 校区ダッシュボード</span><span class="rule"></span></div>
+      <div id="districtDash"></div>
+
       <div class="section-title admin-section"><span>🔒 登録データ一覧</span><span class="rule"></span><button class="export-btn" id="expListings">CSVエクスポート</button></div>
       <div class="table-wrap"><table class="ledger" id="listingTable"></table></div>
 
@@ -1001,8 +1029,23 @@ function renderAdmin(){
   // ここから先（登録データ一覧・つながり一覧・レポート・チャット閲覧）は管理者限定
   wrap.querySelector('#adminLogoutBtn').onclick = () => adminLogout();
   const dupSizes = duplicateGroupSizes(listings);
-  wrap.querySelector('#listingTable').innerHTML = `<tr><th>種別</th><th>内容</th><th>分類</th><th>登録者</th><th>期限</th><th>状態</th><th>登録日時</th></tr>` +
-    (listings.map(l => `<tr><td>${l.mode==='need'?'困りごと':'できること'}</td><td>${renderContentCell(l, dupSizes[l.id])}</td><td>${escapeHtml(l.kind)}・${escapeHtml(l.subcat)}</td><td>${escapeHtml(l.userName)}</td><td>${l.deadline || '-'}</td><td><span class="pill ${l.status==='open'?'open':'connected'}">${l.status==='open'?'募集中':'成立'}</span></td><td>${fmtTime(l.createdAt)}</td></tr>`).join('') || `<tr><td colspan="7">データがありません</td></tr>`);
+  // 校区は登録時に選ぶが、未選択の古い登録などは管理者がここで直せる（直すとダッシュボードに反映される）
+  const districtSelect = l => `<select class="listing-district" data-id="${l.id}">${districtOptionsHtml(l.district || DISTRICT_UNKNOWN, { blank: '', unknown: '不明' })}</select>`;
+  wrap.querySelector('#listingTable').innerHTML = `<tr><th>種別</th><th>内容</th><th>分類</th><th>校区</th><th>登録者</th><th>期限</th><th>状態</th><th>登録日時</th></tr>` +
+    (listings.map(l => `<tr><td>${l.mode==='need'?'困りごと':'できること'}</td><td>${renderContentCell(l, dupSizes[l.id])}</td><td>${escapeHtml(l.kind)}・${escapeHtml(l.subcat)}</td><td>${districtSelect(l)}</td><td>${escapeHtml(l.userName)}</td><td>${l.deadline || '-'}</td><td><span class="pill ${l.status==='open'?'open':'connected'}">${l.status==='open'?'募集中':'成立'}</span></td><td>${fmtTime(l.createdAt)}</td></tr>`).join('') || `<tr><td colspan="8">データがありません</td></tr>`);
+  wrap.querySelectorAll('.listing-district').forEach(sel => {
+    sel.onchange = () => updateDoc(doc(db,'listings', sel.dataset.id), { district: sel.value });
+  });
+
+  loadDistrictInfo();
+  wrap.querySelector('#districtDash').appendChild(renderDistrictDashboard({
+    listings, conns, listingById, info: state.districtInfo, exportCsv,
+    onSave: async (name, n) => {
+      await setDoc(doc(db,'districtInfo','main'), { shokudo: { [name]: n }, updatedAt: Date.now() }, { merge: true });
+      state.districtInfo = { ...state.districtInfo, [name]: n };
+      render();
+    },
+  }));
 
   // つながり一覧は「実際にチャットが始まったもの」だけに絞る。カテゴリ一致で自動提案
   // されただけの未接触な候補まで並べると、1件の困りごとに何件もぶら下がって見づらいため。
@@ -1034,7 +1077,7 @@ function renderAdmin(){
     };
   });
 
-  wrap.querySelector('#expListings').onclick = () => exportCsv(['mode','title','kind','subcat','userName','deadline','status','createdAt'], listings, 'listings.csv');
+  wrap.querySelector('#expListings').onclick = () => exportCsv(['mode','title','kind','subcat','district','userName','deadline','status','createdAt'], listings, 'listings.csv');
   wrap.querySelector('#expConns').onclick = () => exportCsv(['title','needId','offerId','distanceKm','connectedBy','status','createdAt'], conns, 'connections.csv');
 
   wrap.querySelectorAll('.view-chat-btn').forEach(b => {
@@ -1173,7 +1216,8 @@ function renderContentCell(l, dupCount){
 function exportCsv(cols, rows, filename){
   const lines = [cols.join(',')];
   rows.forEach(r => { lines.push(cols.map(c => { let v=r[c]; if(v===null||v===undefined) v=''; v=String(v).replace(/"/g,'""'); return /[,"\n]/.test(v) ? `"${v}"` : v; }).join(',')); });
-  const blob = new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+  // 先頭のBOMがないと、Excelで開いたときに日本語が文字化けする
+  const blob = new Blob(['﻿' + lines.join('\n')], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href=url; a.download=filename;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);

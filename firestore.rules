@@ -54,6 +54,14 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // 校区ダッシュボード用：各校区の子ども食堂の設置数（districtInfo/main = { shokudo: { 校区名: 数 } }）。
+    // 誰でも読めるが、書き込めるのは管理者だけ。個人情報は含まない。
+    match /districtInfo/{docId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
+    }
+
     // 補助金ガイド用の、市が登録する制度情報（募集要項PDFのURL・お知らせ）。
     // 誰でも読めるが、書き込めるのは上のadminUsersに登録された管理者だけ。
     // 申請者が入力する団体名・住所などの個人情報は、サーバーには送らず
