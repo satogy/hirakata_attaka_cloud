@@ -54,6 +54,17 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // 実証KPIの設定（実証期間・目標値）と、職員の対応ログ（問い合わせ対応にかけた時間の記録）。
+    // どちらも読み書きとも管理者だけ。対応ログには個人名・連絡先を書かない運用とする。
+    match /kpiSettings/{docId} {
+      allow read, write: if request.auth != null
+        && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
+    }
+    match /staffLogs/{logId} {
+      allow read, write: if request.auth != null
+        && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
+    }
+
     // 校区ダッシュボード用：各校区の子ども食堂の設置数（districtInfo/main = { shokudo: { 校区名: 数 } }）。
     // 誰でも読めるが、書き込めるのは管理者だけ。個人情報は含まない。
     match /districtInfo/{docId} {

@@ -9,6 +9,7 @@ import {
 import { firebaseConfig, ACCESS_CODE } from "./firebase-config.js";
 import { initSubsidy, setSubsidyMeta, renderSubsidyTab, isSubsidyEditing } from "./subsidy.js";
 import { DISTRICTS, DISTRICT_UNKNOWN, districtOptionsHtml, renderDistrictDashboard } from "./districts.js";
+import { ORG_TYPES, renderKpiDashboard } from "./kpi.js";
 
 const KINDS = {
   "お手伝い": { emoji:"🤝", label:"お手伝い（人の手を借りたい・貸したい）", subcats:["見守り・声かけ","話し相手","送迎","付き添い","子どもの見守り","力仕事","買い物代行","掃除・片付け","庭仕事","行事の手伝い","その他"] },
@@ -45,6 +46,7 @@ let state = {
   adminConnUnsubs: [],
   stats: null, statsAt: 0, statsLoading: false, // つながりの件数（count集計）
   districtInfo: null, districtInfoLoading: false, // 校区ごとの子ども食堂の設置数 {校区名: 数}
+  kpiSettings: null, staffLogs: null, kpiLoading: false, // 実証KPIの設定と、職員の対応ログ（管理者のみ）
 };
 const MAX_AUTO_SUGGEST = 10; // 新規登録時に自動提案する相手の上限（近い順）
 
@@ -94,6 +96,10 @@ function renderGate(errMsg){
       ${ACCESS_CODE ? '<input id="gateCode" type="password" placeholder="合言葉">' : ''}
       ${gateMode === 'new' ? `
         <input id="gateName" type="text" placeholder="表示名（例：さとう農園）">
+        <select id="gateOrg" style="width:100%; padding:11px; margin-bottom:10px; border:1.5px solid var(--line); border-radius:10px; font-size:14px; background:#fff; color:var(--ink);">
+          <option value="" disabled selected>あなたは？（市の効果測定に使います）</option>
+          ${ORG_TYPES.map(t => `<option>${t}</option>`).join('')}
+        </select>
         <button id="gateBtn">はじめる</button>
         <p style="margin-top:14px;"><a href="#" id="toRestore" style="color:var(--ink-soft); font-size:12px;">前に登録した方はこちら（マイページコードでログイン）</a></p>
       ` : `
@@ -133,10 +139,12 @@ async function onGateSubmit(){
   if(!checkAccessCode()){ renderGate('合言葉が違います'); return; }
   const name = document.getElementById('gateName').value.trim();
   if(!name){ renderGate('表示名を入力してください'); return; }
+  const orgType = document.getElementById('gateOrg').value;
+  if(!orgType){ renderGate('「あなたは？」から、いちばん近いものを選んでください'); return; }
   root.innerHTML = `<div class="empty" style="margin-top:60px;">登録中…</div>`;
   await ensureAuth();
   const profileId = uid();
-  const profile = { id: profileId, name, lat:null, lng:null, createdAt: Date.now() };
+  const profile = { id: profileId, name, orgType, lat:null, lng:null, createdAt: Date.now() };
   await setDoc(doc(db,'profiles',profileId), profile);
   localStorage.setItem(LOCAL_KEY, profileId);
   state.profile = profile;
@@ -173,6 +181,38 @@ function showMyCodeNotice(code, isNew){
   document.getElementById('closeCodeNotice').onclick = () => box.remove();
 }
 
+// 登録者の区分（個人・企業・団体…）。市が「企業からの食材寄付」などを数えるために使う。
+// 区分がまだの人（この機能の前に登録した人）には、起動時に一度たずねる。変更もヘッダーからできる。
+function promptOrgType(){
+  if(document.getElementById('orgTypeModal')) return;
+  const box = document.createElement('div'); box.id = 'orgTypeModal';
+  box.style.cssText = 'position:fixed; inset:0; background:rgba(51,58,77,0.45); display:flex; align-items:center; justify-content:center; z-index:999; padding:16px;';
+  box.innerHTML = `
+    <div style="background:#fff; border-radius:18px; padding:24px; max-width:380px; width:100%; box-shadow:0 8px 30px rgba(0,0,0,0.25);">
+      <div style="font-family:'Zen Maru Gothic'; font-weight:800; font-size:16px; margin-bottom:6px;">あなたは、どれに近いですか？</div>
+      <p style="font-size:12.5px; color:var(--ink-soft); line-height:1.7; margin:0 0 12px;">市が、どんな方の協力でつながりができたかを知るために使います。表示名とは別に、一覧には出ません。</p>
+      <div id="orgTypeBtns" style="display:grid; gap:8px;"></div>
+      <div style="text-align:center; margin-top:12px;"><a href="#" id="orgLater" style="color:var(--ink-soft); font-size:12px;">あとで答える</a></div>
+    </div>`;
+  document.body.appendChild(box);
+  const btns = box.querySelector('#orgTypeBtns');
+  ORG_TYPES.forEach(t => {
+    const b = document.createElement('button');
+    b.textContent = t;
+    b.style.cssText = `font-family:'Zen Maru Gothic'; font-weight:700; padding:11px; border:1.5px solid ${state.profile.orgType===t ? 'var(--need)' : 'var(--line)'}; border-radius:12px; background:#fff; color:var(--ink); cursor:pointer;`;
+    b.onclick = async () => { box.remove(); await saveOrgType(t); };
+    btns.appendChild(b);
+  });
+  box.querySelector('#orgLater').onclick = e => { e.preventDefault(); box.remove(); };
+}
+async function saveOrgType(type){
+  state.profile.orgType = type;
+  await saveProfile();
+  // 自分の登録にも反映する（ダッシュボードは登録ごとの区分を使うため）
+  await Promise.all(myListings().filter(l => l.orgType !== type).map(l => updateDoc(doc(db,'listings',l.id), { orgType: type })));
+  render();
+}
+
 async function boot(){
   const savedCode = localStorage.getItem(LOCAL_KEY);
   if(savedCode){
@@ -187,6 +227,7 @@ function startApp(){
   listenListings(); listenConnections(); render();
   checkAdminStatus();
   loadSubsidyMeta();
+  if(!state.profile.orgType) setTimeout(promptOrgType, 600);
 }
 
 // 補助金ガイド：市が登録した募集要項PDFのURLなど。firestore.rulesにsubsidyProgramsが未デプロイでも
@@ -283,6 +324,22 @@ function attachAdminConnections(){
 function detachAdminConnections(){
   state.adminConnUnsubs.forEach(u => u());
   state.adminConnUnsubs = []; state.adminConns = [];
+}
+
+// 実証KPIの設定（kpiSettings/main）と職員の対応ログ（staffLogs、新しい順に最大300件）。管理者だけが読み書きする。
+async function loadKpiData(){
+  if((state.kpiSettings && state.staffLogs) || state.kpiLoading) return;
+  state.kpiLoading = true;
+  try {
+    const [setSnap, logSnap] = await Promise.all([
+      getDoc(doc(db,'kpiSettings','main')),
+      getDocs(query(collection(db,'staffLogs'), orderBy('date','desc'), limit(300))),
+    ]);
+    state.kpiSettings = setSnap.exists() ? setSnap.data() : {};
+    state.staffLogs = logSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch(e) { state.kpiSettings = state.kpiSettings || {}; state.staffLogs = state.staffLogs || []; } // ルール未反映時など
+  state.kpiLoading = false;
+  render();
 }
 
 // 各校区の子ども食堂の設置数（市が把握している数。管理者が入力）。1ドキュメントを1回だけ読む。
@@ -403,7 +460,7 @@ function render(){
   // 補助金の入力中にFirestoreの更新で画面を作り直すと、入力欄のフォーカスが外れて打てなくなるので、
   // 入力が終わる（フォーカスが外れる）まで待つ
   const editingGuarded = () => (state.tab==='subsidy' && isSubsidyEditing())
-    || (state.tab==='admin' && document.activeElement && document.activeElement.classList.contains('dd-input'));
+    || (state.tab==='admin' && document.activeElement && (document.activeElement.classList.contains('dd-input') || document.activeElement.classList.contains('kpi-in')));
   if(editingGuarded()){
     if(!renderDeferred){
       renderDeferred = true;
@@ -441,8 +498,10 @@ function renderHeader(){
     <div class="whoami">
       表示名: <b>${escapeHtml(state.profile.name)}</b><br>
       <button id="renameBtn">名前を変更</button>
+      <button id="orgBtn">区分：${escapeHtml(state.profile.orgType || '未設定')}</button>
       <button id="showCodeBtn">マイページコード</button>
     </div>`;
+  h.querySelector('#orgBtn').onclick = () => promptOrgType();
   h.querySelector('#renameBtn').onclick = async () => {
     const n = prompt('表示名を入力してください', state.profile.name);
     if(n && n.trim()){ state.profile.name = n.trim(); await saveProfile(); render(); }
@@ -552,7 +611,7 @@ async function onOfferToHelp(need){
   // その場で簡易オファーを登録し、つながりを提案する
   const offerListing = {
     id: uid(), userId: state.profile.id, userName: state.profile.name, mode: 'offer',
-    kind: need.kind, subcat: need.subcat, district: state.profile.district || DISTRICT_UNKNOWN,
+    kind: need.kind, subcat: need.subcat, district: state.profile.district || DISTRICT_UNKNOWN, orgType: state.profile.orgType || '',
     title: `「${need.title}」に対応します`,
     note: '', lat: state.profile.lat, lng: state.profile.lng,
     status: 'open', createdAt: Date.now(), quickOffer: true,
@@ -676,7 +735,7 @@ function renderRegister(){
     const listing = {
       id: uid(), userId: state.profile.id, userName: state.profile.name, mode: state.formMode,
       kind: state.formKind, subcat: f.get('subcat'),
-      district: f.get('district') || DISTRICT_UNKNOWN,
+      district: f.get('district') || DISTRICT_UNKNOWN, orgType: state.profile.orgType || '',
       title: f.get('title').trim(),
       deadline: f.get('deadline') || null,
       lat: f.get('lat') ? Number(f.get('lat')) : null, lng: f.get('lng') ? Number(f.get('lng')) : null,
@@ -885,7 +944,19 @@ function renderMatchControls(){
   const m = state.connections.find(x=>x.id===state.activeConnId);
   if(!m) return;
   if(m.status==='connected'){
-    el.innerHTML = `<div class="match-controls done">✓ つながり成立しています</div>`;
+    // 成立のあと、実際に届いた・手伝えたら当事者が「実施できた」を記録する（市の効果測定：完了）
+    if(m.fulfilled){
+      el.innerHTML = `<div class="match-controls done">✓ つながり成立しています<br>✓ 実施を記録しました${m.outcomeNote ? '：'+escapeHtml(m.outcomeNote) : ''}</div>`;
+    } else {
+      el.innerHTML = `<div class="match-controls done">✓ つながり成立しています</div>
+        <div class="match-controls ready">
+          <div class="geo-status">実際に届いた・お手伝いできたら、記録してください（市の効果測定に使います）</div>
+          <div class="row"><input id="outcomeNote" maxlength="80" placeholder="例）お米10kgを届けた／2人で2時間お手伝い（任意）"><button class="btn-sm primary" id="fulfilBtn">実施できた</button></div>
+        </div>`;
+      el.querySelector('#fulfilBtn').onclick = async () => {
+        await updateDoc(doc(db,'connections',m.id), { fulfilled: true, fulfilledAt: Date.now(), fulfilledBy: state.profile.id, outcomeNote: el.querySelector('#outcomeNote').value.trim() });
+      };
+    }
     return;
   }
   const n = listingById(m.needId), o = listingById(m.offerId);
@@ -895,7 +966,7 @@ function renderMatchControls(){
   if(bothTalked){
     el.innerHTML = `<div class="match-controls ready"><button class="btn-sm primary" id="matchConfirmBtn">つながり成立にする</button></div>`;
     el.querySelector('#matchConfirmBtn').onclick = async () => {
-      await updateDoc(doc(db,'connections',m.id), {status:'connected', matchedAt: Date.now()});
+      await updateDoc(doc(db,'connections',m.id), {status:'connected', matchedAt: Date.now(), matchedBy: state.profile.id});
     };
   } else {
     el.innerHTML = `<div class="match-controls hint">お互いにメッセージを送り合うと、ここに「つながり成立にする」ボタンが表示されます。</div>`;
@@ -937,6 +1008,9 @@ function renderAdmin(){
 
     ${state.isAdmin ? `
       <p class="sub">管理者としてログイン中です。<button class="export-btn" id="adminLogoutBtn">ログアウト</button></p>
+      <div class="section-title admin-section"><span>🔒 実証KPI</span><span class="rule"></span></div>
+      <div id="kpiDash"></div>
+
       <div class="section-title admin-section"><span>🔒 校区ダッシュボード</span><span class="rule"></span></div>
       <div id="districtDash"></div>
 
@@ -1031,11 +1105,35 @@ function renderAdmin(){
   const dupSizes = duplicateGroupSizes(listings);
   // 校区は登録時に選ぶが、未選択の古い登録などは管理者がここで直せる（直すとダッシュボードに反映される）
   const districtSelect = l => `<select class="listing-district" data-id="${l.id}">${districtOptionsHtml(l.district || DISTRICT_UNKNOWN, { blank: '', unknown: '不明' })}</select>`;
-  wrap.querySelector('#listingTable').innerHTML = `<tr><th>種別</th><th>内容</th><th>分類</th><th>校区</th><th>登録者</th><th>期限</th><th>状態</th><th>登録日時</th></tr>` +
-    (listings.map(l => `<tr><td>${l.mode==='need'?'困りごと':'できること'}</td><td>${renderContentCell(l, dupSizes[l.id])}</td><td>${escapeHtml(l.kind)}・${escapeHtml(l.subcat)}</td><td>${districtSelect(l)}</td><td>${escapeHtml(l.userName)}</td><td>${l.deadline || '-'}</td><td><span class="pill ${l.status==='open'?'open':'connected'}">${l.status==='open'?'募集中':'成立'}</span></td><td>${fmtTime(l.createdAt)}</td></tr>`).join('') || `<tr><td colspan="8">データがありません</td></tr>`);
+  // 登録者の区分（企業・団体・個人…）も、未設定の古い登録などは管理者が直せる
+  const orgSelect = l => `<select class="listing-org" data-id="${l.id}"><option value=""${l.orgType ? '' : ' selected'}>未設定</option>${ORG_TYPES.map(t => `<option${l.orgType===t ? ' selected' : ''}>${t}</option>`).join('')}</select>`;
+  wrap.querySelector('#listingTable').innerHTML = `<tr><th>種別</th><th>内容</th><th>分類</th><th>校区</th><th>区分</th><th>登録者</th><th>期限</th><th>状態</th><th>登録日時</th></tr>` +
+    (listings.map(l => `<tr><td>${l.mode==='need'?'困りごと':'できること'}</td><td>${renderContentCell(l, dupSizes[l.id])}</td><td>${escapeHtml(l.kind)}・${escapeHtml(l.subcat)}</td><td>${districtSelect(l)}</td><td>${orgSelect(l)}</td><td>${escapeHtml(l.userName)}</td><td>${l.deadline || '-'}</td><td><span class="pill ${l.status==='open'?'open':'connected'}">${l.status==='open'?'募集中':'成立'}</span></td><td>${fmtTime(l.createdAt)}</td></tr>`).join('') || `<tr><td colspan="9">データがありません</td></tr>`);
   wrap.querySelectorAll('.listing-district').forEach(sel => {
     sel.onchange = () => updateDoc(doc(db,'listings', sel.dataset.id), { district: sel.value });
   });
+  wrap.querySelectorAll('.listing-org').forEach(sel => {
+    sel.onchange = () => updateDoc(doc(db,'listings', sel.dataset.id), { orgType: sel.value });
+  });
+
+  loadKpiData();
+  wrap.querySelector('#kpiDash').appendChild(renderKpiDashboard({
+    listings, conns, listingById, districtInfo: state.districtInfo, exportCsv,
+    settings: state.kpiSettings, logs: state.staffLogs,
+    onSaveSettings: async next => {
+      await setDoc(doc(db,'kpiSettings','main'), { ...next, updatedAt: Date.now() });
+      state.kpiSettings = next; render();
+    },
+    onAddLog: async log => {
+      const entry = { id: uid(), ...log, createdAt: Date.now() };
+      await setDoc(doc(db,'staffLogs', entry.id), entry);
+      state.staffLogs = [entry, ...(state.staffLogs || [])].sort((a,b) => (b.date||'').localeCompare(a.date||'')); render();
+    },
+    onDeleteLog: async id => {
+      await deleteDoc(doc(db,'staffLogs', id));
+      state.staffLogs = (state.staffLogs || []).filter(l => l.id !== id); render();
+    },
+  }));
 
   loadDistrictInfo();
   wrap.querySelector('#districtDash').appendChild(renderDistrictDashboard({
@@ -1056,7 +1154,7 @@ function renderAdmin(){
     : hiddenConnCount>0 ? `チャットが始まっている・成立した${connsToShow.length}件のみ表示しています（未接触の候補 ${hiddenConnCount}件は非表示）`
     : 'チャットが始まっている・成立した候補のみ表示しています。';
 
-  wrap.querySelector('#connTable').innerHTML = `<tr><th>内容</th><th>困っている人</th><th>できる人</th><th>距離</th><th>つないだ人</th><th>つないだ日時</th><th>状態</th><th>チャット</th></tr>` +
+  wrap.querySelector('#connTable').innerHTML = `<tr><th>内容</th><th>困っている人</th><th>できる人</th><th>距離</th><th>つないだ人</th><th>つないだ日時</th><th>状態</th><th>実施</th><th title="電話などで職員が間に入った場合にチェック（KPIの自律成立から除かれます）">職員仲介</th><th>チャット</th></tr>` +
     (connsToShow.map(m => { const n=listingById(m.needId), o=listingById(m.offerId);
       const who = m.connectedBy==='system' ? '自動提案（カテゴリ一致）'
         : m.connectedBy==='coordinator' ? `コーディネーター${m.connectedByName ? '：'+escapeHtml(m.connectedByName) : ''}`
@@ -1067,7 +1165,12 @@ function renderAdmin(){
         : `<span class="pill open">提案中</span>`;
       const needName = n ? escapeHtml(n.userName) + dupMark(dupSizes[n.id]) : '-';
       const offerName = o ? escapeHtml(o.userName) + dupMark(dupSizes[o.id]) : '-';
-      return `<tr><td>${escapeHtml(m.title)}</td><td>${needName}</td><td>${offerName}</td><td>${fmtDist(m.distanceKm)}</td><td>${who}</td><td>${m.connectedBy==='system'?'-':fmtTime(m.connectedAt||m.createdAt)}</td><td>${statusCell}</td>${chatCell}</tr>`; }).join('') || `<tr><td colspan="8">データがありません</td></tr>`);
+      const doneCell = m.fulfilled ? `<span title="${escapeHtml(m.outcomeNote||'')}">✓ ${fmtTime(m.fulfilledAt)}</span>` : '-';
+      const assistCell = `<input type="checkbox" class="staff-assist" data-conn="${m.id}"${m.staffAssisted ? ' checked' : ''}>`;
+      return `<tr><td>${escapeHtml(m.title)}</td><td>${needName}</td><td>${offerName}</td><td>${fmtDist(m.distanceKm)}</td><td>${who}</td><td>${m.connectedBy==='system'?'-':fmtTime(m.connectedAt||m.createdAt)}</td><td>${statusCell}</td><td>${doneCell}</td><td>${assistCell}</td>${chatCell}</tr>`; }).join('') || `<tr><td colspan="10">データがありません</td></tr>`);
+  wrap.querySelectorAll('.staff-assist').forEach(cb => {
+    cb.onchange = () => updateDoc(doc(db,'connections', cb.dataset.conn), { staffAssisted: cb.checked });
+  });
 
   wrap.querySelectorAll('.revert-match-btn').forEach(b => {
     b.onclick = async () => {
@@ -1077,8 +1180,8 @@ function renderAdmin(){
     };
   });
 
-  wrap.querySelector('#expListings').onclick = () => exportCsv(['mode','title','kind','subcat','district','userName','deadline','status','createdAt'], listings, 'listings.csv');
-  wrap.querySelector('#expConns').onclick = () => exportCsv(['title','needId','offerId','distanceKm','connectedBy','status','createdAt'], conns, 'connections.csv');
+  wrap.querySelector('#expListings').onclick = () => exportCsv(['mode','title','kind','subcat','district','orgType','userName','deadline','status','createdAt'], listings, 'listings.csv');
+  wrap.querySelector('#expConns').onclick = () => exportCsv(['title','needId','offerId','distanceKm','connectedBy','staffAssisted','status','matchedAt','fulfilled','fulfilledAt','outcomeNote','createdAt'], conns, 'connections.csv');
 
   wrap.querySelectorAll('.view-chat-btn').forEach(b => {
     b.onclick = () => { state.adminChatOpenId = b.dataset.conn; listenAdminChat(b.dataset.conn); render(); };
