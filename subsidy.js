@@ -7,7 +7,7 @@
 // localStorageにだけ保存する。firestore.rulesは「ログイン済みなら誰でも読める」設計のため、
 // 個人情報をサーバーに置かないことが前提。端末を替える場合は「下書きをファイルに保存」を使う。
 
-import { DISTRICTS } from './districts.js';
+import { DISTRICTS, SHOKUDO_BASELINE, SHOKUDO_AS_OF } from './districts.js';
 
 const STORE_KEY = 'attaka_subsidy_draft_v1';
 
@@ -272,6 +272,7 @@ function validate(d){
 }
 
 // ---------------------------------------------------------------- 画面の部品
+const districtLabel = x => x + '校区' + (SHOKUDO_BASELINE[x] > 0 ? '（実施団体あり）' : '');
 function sec(title, inner, open){
   return `<details class="sb-sec"${open ? ' open' : ''}><summary>${title}</summary><div class="sb-sec-body">${inner}</div></details>`;
 }
@@ -474,8 +475,9 @@ function stepHtml(id){
       ${fld({ path: 'project.staffCount', label: 'スタッフ数（人）', req: true, num: true, type: 'number', attrs: 'min="1"', hint: 'ボランティアを含めた、おおよその人数です。' })}
       ${fld({ path: 'project.venueName', label: '実施場所：施設名', req: true, ph: '例）●●会館', hint: '「つながり」で見つけた場所提供の施設があれば、ここに入れます。' })}
       ${fld({ path: 'project.venueAddress', label: '実施場所：住所', req: true, ph: '枚方市…' })}
-      ${selectField({ path: 'project.district', label: '実施場所の小学校区', req: true, options: DISTRICTS.map(x => [x, x + '校区']), hint: '新しく始める団体は、原則、すでに実施団体がある校区は対象外です。市に確認しましょう。' })}
-      ${selectField({ path: 'project.district2', label: '校区の異なる2か所目（ある場合のみ）', options: DISTRICTS.map(x => [x, x + '校区']), blank: 'なし' })}
+      ${selectField({ path: 'project.district', label: '実施場所の小学校区', req: true, options: DISTRICTS.map(x => [x, districtLabel(x)]), hint: `新しく始める団体は、原則、すでに実施団体がある校区は対象外です。（実施団体の有無は、市の一覧・${SHOKUDO_AS_OF}にもとづきます）` })}
+      <div data-district-note></div>
+      ${selectField({ path: 'project.district2', label: '校区の異なる2か所目（ある場合のみ）', options: DISTRICTS.map(x => [x, districtLabel(x)]), blank: 'なし' })}
       ${fld({ path: 'project.meals', label: '1回に用意する、子ども向けの食数（食）', req: true, num: true, type: 'number', attrs: 'min="0"', hint: '「子ども」は、無料が必須となる<b>中学生以下</b>の子どもです。10食以上が必要です。この数で区分（A・B・C）が決まります。' })}
       <div class="sb-inline">区分：<b>${out('tier')}</b>　1回あたりの上限：<b>${out('unit')}</b></div>
       ${fld({ path: 'project.capacity', label: '利用定員（1回あたり・人）', req: true, num: true, type: 'number', attrs: 'min="1"', hint: '中学生以下だけでなく、高校生以上も含めた人数です。' })}
@@ -630,6 +632,13 @@ function refresh(root){
       : c.diff === 0 ? '✓ 収入と支出が一致しています。'
       : c.diff > 0 ? `支出が ${yen(c.diff)} 多いです。参加費や団体自己資金などの収入を増やすか、支出を見直してください。`
       : `収入が ${yen(-c.diff)} 多いです。補助金は実際に使う額が上限のため、支出を増やすか、収入を見直してください。`;
+  }
+  const dnote = root.querySelector('[data-district-note]');
+  if(dnote){
+    const d = draft.project.district, n = SHOKUDO_BASELINE[d] || 0;
+    dnote.innerHTML = !d ? '' : n > 0
+      ? `<div class="sb-alert warn">${esc(d)}校区には、すでに子ども食堂の実施団体が${n}団体あります（市の一覧・${SHOKUDO_AS_OF}）。新しく始める場合は原則、対象外です。ただし状況によっては対象になることもあるので、事前相談で確認しましょう。</div>`
+      : `<div class="sb-alert ok">${esc(d)}校区は、市の一覧（${SHOKUDO_AS_OF}）に実施団体がない校区です。</div>`;
   }
   const hrs = root.querySelector('[data-out-box="hours"]');
   if(hrs){ const h = durationHours(draft.project.startTime, draft.project.endTime); hrs.textContent = h == null ? '' : `実施時間：${h}時間${h < 2 ? '（原則2時間以上が必要です）' : ''}`; hrs.classList.toggle('warn', h != null && h < 2); }
