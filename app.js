@@ -4,7 +4,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, collection, doc, setDoc, getDoc, getDocs, addDoc, onSnapshot,
-  query, orderBy, limit, updateDoc, deleteDoc
+  query, orderBy, limit, updateDoc, deleteDoc, where, getCountFromServer
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, ACCESS_CODE } from "./firebase-config.js";
 import { initSubsidy, setSubsidyMeta, renderSubsidyTab, isSubsidyEditing } from "./subsidy.js";
@@ -40,7 +40,11 @@ let state = {
   report: null,       // レポート生成結果（生成中はundefined、未生成はnull）
   adminChatOpenId: null, // 管理者が閲覧中のつながりID
   adminChatMsgs: [],
+  adminConns: [],        // 管理者用：チャットが始まった／成立したつながり（コーディネーター画面を開いている間だけ購読）
+  adminConnUnsubs: [],
+  stats: null, statsAt: 0, statsLoading: false, // つながりの件数（count集計）
 };
+const MAX_AUTO_SUGGEST = 10; // 新規登録時に自動提案する相手の上限（近い順）
 
 const root = document.getElementById('root');
 
@@ -240,9 +244,61 @@ function listenListings(){
   const q = query(collection(db,'listings'), orderBy('createdAt','desc'));
   onSnapshot(q, snap => { state.listings = snap.docs.map(d => ({ id:d.id, ...d.data() })); render(); });
 }
+// Firestoreの無料枠（読み取り1日5万件）に収めるため、つながりは「自分に関係するもの」だけ読む。
+// 以前は全員が全件を読んでいて、つながり候補は登録数の2乗に近い速さで増えるため、すぐ枠を超える。
+//   participants = 困りごと・できることの登録者2人 ／ connectorUserId = 手動でつないだコーディネーター
 function listenConnections(){
-  const q = query(collection(db,'connections'), orderBy('createdAt','desc'));
-  onSnapshot(q, snap => { state.connections = snap.docs.map(d => ({ id:d.id, ...d.data() })); render(); });
+  const me = state.profile.id;
+  const parts = {};
+  const sub = (key, q) => onSnapshot(q, snap => {
+    parts[key] = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    const merged = new Map();
+    Object.values(parts).forEach(arr => arr.forEach(c => merged.set(c.id, c)));
+    state.connections = [...merged.values()].sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    render();
+  });
+  sub('participant', query(collection(db,'connections'), where('participants','array-contains', me)));
+  sub('connector', query(collection(db,'connections'), where('connectorUserId','==', me)));
+}
+
+// コーディネーター画面（管理者）だけ、チャットが始まったもの・成立したものを全員分読む。
+// 画面を開いている間だけ購読し、離れたら止める。
+function attachAdminConnections(){
+  if(state.adminConnUnsubs.length) return;
+  const parts = {};
+  const sub = (key, q) => onSnapshot(q, snap => {
+    parts[key] = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    const merged = new Map();
+    Object.values(parts).forEach(arr => arr.forEach(c => merged.set(c.id, c)));
+    state.adminConns = [...merged.values()].sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    render();
+  });
+  state.adminConnUnsubs = [
+    sub('chat', query(collection(db,'connections'), where('hasMessages','==', true))),
+    sub('done', query(collection(db,'connections'), where('status','==', 'connected'))),
+  ];
+}
+function detachAdminConnections(){
+  state.adminConnUnsubs.forEach(u => u());
+  state.adminConnUnsubs = []; state.adminConns = [];
+}
+
+// コーディネーター画面の統計。件数を数えるクエリは、ドキュメントを読まずに済み、読み取り課金が
+// 1000件あたり1回分で済む。候補は大量になりうるので、全件を読まずにここで数える。
+async function loadConnStats(){
+  if(state.stats && Date.now() - state.statsAt < 60000) return;
+  if(state.statsLoading) return;
+  state.statsLoading = true;
+  try {
+    const col = collection(db,'connections');
+    const [all, done] = await Promise.all([
+      getCountFromServer(query(col)),
+      getCountFromServer(query(col, where('status','==','connected'))),
+    ]);
+    state.stats = { total: all.data().count, connected: done.data().count };
+  } catch(e) { state.stats = { total: null, connected: null }; }
+  state.statsAt = Date.now(); state.statsLoading = false;
+  render();
 }
 function listenChat(connId){
   if(state.chatUnsub) state.chatUnsub();
@@ -264,17 +320,35 @@ async function createListing(listing){
 // 同じお手伝い・寄付・場所提供＋サブカテゴリの相手がいれば、候補としてつながりを自動提案する
 async function autoSuggestConnections(newListing){
   const opposite = newListing.mode === 'need' ? 'offer' : 'need';
+  // 近い順に最大10件まで。全員分を提案すると、書き込みも他の人の読み取りも登録数の2乗で増える。
+  // 10件より先の相手は、コーディネーターの手動連携ツールからいつでもつなげられる。
+  const dist = c => {
+    const d = haversine(newListing.lat, newListing.lng, c.lat, c.lng);
+    return d===null ? Infinity : d;
+  };
   const candidates = state.listings.filter(l => l.mode===opposite && l.status==='open'
-    && l.kind===newListing.kind && l.subcat===newListing.subcat);
+    && l.kind===newListing.kind && l.subcat===newListing.subcat)
+    .sort((a,b) => dist(a) - dist(b))
+    .slice(0, MAX_AUTO_SUGGEST);
   for(const c of candidates){
     const needL = newListing.mode==='need' ? newListing : c;
     const offerL = newListing.mode==='offer' ? newListing : c;
-    await proposeConnection(needL, offerL, 'system');
+    await proposeConnection(needL, offerL, 'system', null, null, true);
   }
 }
 
-async function proposeConnection(needL, offerL, connectedBy, connectedByName=null, connectorUserId=null){
-  const dup = state.connections.find(m => m.needId===needL.id && m.offerId===offerL.id);
+async function findConnection(needId, offerId){
+  const local = state.connections.find(m => m.needId===needId && m.offerId===offerId);
+  if(local) return local;
+  // 他のコーディネーターが作った分などは手元にないので、困りごと側で絞って探す
+  const snap = await getDocs(query(collection(db,'connections'), where('needId','==', needId)));
+  const hit = snap.docs.find(d => d.data().offerId===offerId);
+  return hit ? { id: hit.id, ...hit.data() } : null;
+}
+
+// isNewPair: どちらかの登録が今作ったばかりで、既存のつながりがありえないとき。重複確認の読み取りを省く
+async function proposeConnection(needL, offerL, connectedBy, connectedByName=null, connectorUserId=null, isNewPair=false){
+  const dup = isNewPair ? null : await findConnection(needL.id, offerL.id);
   if(dup){
     // カテゴリが一致するペアはシステムが既に自動提案済みのことが多い（手動連携ツールは
     // まさにそういうペアだけを表示する）。そこへ人が明示的に「つなげる」を押した場合は、
@@ -377,7 +451,10 @@ function renderTabs(){
     const el = document.createElement('div');
     el.className = 'tab' + (state.tab===t.id ? ' active':'');
     el.innerHTML = t.label + (t.n ? `<span class="n">${t.n}</span>` : '');
-    el.onclick = () => { state.tab = t.id; render(); };
+    el.onclick = () => {
+      if(state.tab==='admin' && t.id!=='admin') detachAdminConnections();
+      state.tab = t.id; render();
+    };
     wrap.appendChild(el);
   });
   return wrap;
@@ -466,7 +543,7 @@ async function onOfferToHelp(need){
   };
   await setDoc(doc(db,'listings',offerListing.id), offerListing);
   state.listings.unshift(offerListing);
-  const conn = await proposeConnection(need, offerListing, state.profile.id, state.profile.name);
+  const conn = await proposeConnection(need, offerListing, state.profile.id, state.profile.name, null, true);
   state.tab = 'chat'; state.activeConnId = conn.id;
   render();
 }
@@ -803,11 +880,18 @@ function renderMatchControls(){
 // ---- coordinator (admin) ----
 function renderAdmin(){
   const wrap = document.createElement('div');
-  const listings = state.listings, conns = state.connections;
+  // 一覧に使う conns は管理者だけが読める「チャット開始済み／成立済み」。候補の総数と成立数は
+  // 件数集計（loadConnStats）で出す。
+  if(state.isAdmin) attachAdminConnections();
+  loadConnStats();
+  const listings = state.listings, conns = state.adminConns;
   const needCount = listings.filter(l=>l.mode==='need').length;
   const offerCount = listings.filter(l=>l.mode==='offer').length;
-  const connectedCount = conns.filter(m=>m.status==='connected').length;
-  const rate = conns.length ? Math.round(connectedCount/conns.length*100) : 0;
+  const st = state.stats;
+  const connTotal = st && st.total!==null ? st.total : null;
+  const connectedCount = st && st.connected!==null ? st.connected : null;
+  const rate = (connTotal && connectedCount!==null) ? Math.round(connectedCount/connTotal*100) : null;
+  const statNum = v => v!==null ? v : (st ? '-' : '…');
 
   wrap.innerHTML = `
     <h2>コーディネーター画面</h2>
@@ -815,8 +899,8 @@ function renderAdmin(){
     <div class="stat-row">
       <div class="stat"><div class="v">${listings.length}</div><div class="l">総登録数</div></div>
       <div class="stat"><div class="v">${needCount} / ${offerCount}</div><div class="l">困りごと / できること</div></div>
-      <div class="stat"><div class="v">${conns.length}</div><div class="l">つながり候補数</div></div>
-      <div class="stat"><div class="v">${rate}%</div><div class="l">成立率（${connectedCount}件）</div></div>
+      <div class="stat"><div class="v">${statNum(connTotal)}</div><div class="l">つながり候補数</div></div>
+      <div class="stat"><div class="v">${rate===null ? statNum(null) : rate+'%'}</div><div class="l">成立率（${statNum(connectedCount)}件）</div></div>
     </div>
 
     <div class="section-title"><span>手動でつなげる</span><span class="rule"></span></div>
@@ -890,6 +974,7 @@ function renderAdmin(){
       box.querySelector('.cg-btn').onclick = async () => {
         const n = listingById(needSel.value), o = listingById(offerSel.value);
         await proposeConnection(n, o, 'coordinator', state.profile.name, state.profile.id);
+        state.statsAt = 0; // 候補数・成立率を次の描画で数え直す
         alert('つなげました。「つながり」タブから確認できます。');
         render();
       };
@@ -921,11 +1006,12 @@ function renderAdmin(){
 
   // つながり一覧は「実際にチャットが始まったもの」だけに絞る。カテゴリ一致で自動提案
   // されただけの未接触な候補まで並べると、1件の困りごとに何件もぶら下がって見づらいため。
-  const connsToShow = conns.filter(m => m.hasMessages);
-  const hiddenConnCount = conns.length - connsToShow.length;
+  // （読み取りを減らすため、管理者もチャット開始済み／成立済みしか読み込んでいない）
+  const connsToShow = conns;
+  const hiddenConnCount = connTotal===null ? 0 : connTotal - connsToShow.length;
   wrap.querySelector('#connFilterNote').textContent = conns.length===0 ? ''
-    : hiddenConnCount>0 ? `チャットが始まっている${connsToShow.length}件のみ表示しています（チャット未開始の候補 ${hiddenConnCount}件は非表示）`
-    : 'チャットが始まっている候補のみ表示しています。';
+    : hiddenConnCount>0 ? `チャットが始まっている・成立した${connsToShow.length}件のみ表示しています（未接触の候補 ${hiddenConnCount}件は非表示）`
+    : 'チャットが始まっている・成立した候補のみ表示しています。';
 
   wrap.querySelector('#connTable').innerHTML = `<tr><th>内容</th><th>困っている人</th><th>できる人</th><th>距離</th><th>つないだ人</th><th>つないだ日時</th><th>状態</th><th>チャット</th></tr>` +
     (connsToShow.map(m => { const n=listingById(m.needId), o=listingById(m.offerId);
@@ -970,7 +1056,7 @@ function listenAdminChat(connId){
 
 function renderAdminChatViewer(el){
   if(!el || !state.adminChatOpenId) return;
-  const m = state.connections.find(c=>c.id===state.adminChatOpenId);
+  const m = state.adminConns.find(c=>c.id===state.adminChatOpenId);
   if(!m) return;
   const n = listingById(m.needId), o = listingById(m.offerId);
   const box = document.createElement('div'); box.className = 'admin-chat-box';
@@ -999,7 +1085,7 @@ async function generateReport(){
   state.report = undefined; // 生成中
   render();
   const rows = [];
-  const connectedConns = state.connections.filter(m => m.status==='connected');
+  const connectedConns = state.adminConns.filter(m => m.status==='connected');
   for(const m of connectedConns){
     const n = listingById(m.needId);
     if(!n) continue;
