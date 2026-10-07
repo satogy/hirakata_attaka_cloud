@@ -31,31 +31,37 @@ service cloud.firestore {
       }
     }
 
-    // 管理者（レポート機能・全チャット閲覧など）。
-    // 「マイページコード」はアプリ側の自己申告制であり、Firestoreルールから
-    // 検証できないため、Firebase Authの匿名UID（request.auth.uid）に紐づけて
-    // 管理する。ドキュメントIDが自分のuidと一致し、かつ合言葉が正しい場合のみ
-    // 自己登録できる（＝合言葉を知らない第三者はadminを名乗れない）。
-    // 合言葉はこのルールファイル自体に埋め込まれておりクライアントには一切
-    // 配信されないため、firebase-config.js内のACCESS_CODEより堅い。
-    // 一度登録すれば以降はこのブラウザ／端末のFirebase Authセッションが
-    // 続く限り管理者として扱われる（キャッシュ削除等で別のuidになった場合は
-    // 合言葉を入力して再登録が必要）。
-    match /admins/{uid} {
+    // 管理者（市職員・事務局：レポート・全チャット閲覧・補助金の設定など）。
+    // 以前は「合言葉」方式だったが、合言葉がこのファイルごと公開リポジトリに載って
+    // しまうため廃止した。現在は、許可リストに載ったGoogleアカウントでログインした
+    // 人だけが自己登録できる。許可リストはFirestoreの config/adminEmails
+    // （{ emails: ["xxx@example.com", ...] }）に置き、Firebaseコンソールから手動で
+    // 編集する（公開リポジトリにメールアドレスを載せないため）。
+    // 登録先は adminUsers/{authUid}。GoogleアカウントのuidはどのPC・スマホでも同じなので、
+    // 端末を替えても再登録は要らない。旧 admins コレクションは参照しない（＝旧合言葉で
+    // 登録された管理者は自動的に無効になる）。
+    match /adminUsers/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;
       allow create: if request.auth != null && request.auth.uid == uid
-        && request.resource.data.claim == "hirakata-spiraq-admin-2026";
+        && request.auth.token.email_verified == true
+        && request.resource.data.email == request.auth.token.email
+        && request.auth.token.email in get(/databases/$(database)/documents/config/adminEmails).data.emails;
       allow update, delete: if false;
     }
 
+    // 許可リストの置き場。クライアントからは読み書きとも不可（ルール内のget()でのみ参照される）。
+    match /config/{docId} {
+      allow read, write: if false;
+    }
+
     // 補助金ガイド用の、市が登録する制度情報（募集要項PDFのURL・お知らせ）。
-    // 誰でも読めるが、書き込めるのは上のadminsに登録された管理者だけ。
+    // 誰でも読めるが、書き込めるのは上のadminUsersに登録された管理者だけ。
     // 申請者が入力する団体名・住所などの個人情報は、サーバーには送らず
     // 端末内（localStorage）にだけ保存するため、ここには置かない。
     match /subsidyPrograms/{programId} {
       allow read: if request.auth != null;
       allow write: if request.auth != null
-        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+        && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
     }
   }
 }

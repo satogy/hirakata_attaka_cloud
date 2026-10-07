@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
-  getAuth, signInAnonymously, onAuthStateChanged
+  getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, collection, doc, setDoc, getDoc, getDocs, addDoc, onSnapshot,
@@ -114,12 +114,21 @@ function checkAccessCode(){
   return !ACCESS_CODE || code === ACCESS_CODE;
 }
 
+// すでにログイン状態（管理者のGoogleログインを含む）ならそれを引き継ぎ、無いときだけ匿名ログインする。
+// signInAnonymouslyを無条件に呼ぶと、再読み込みのたびに管理者のGoogleログインが匿名に置き換わってしまう。
+async function ensureAuth(){
+  const user = await new Promise(resolve => {
+    const off = onAuthStateChanged(auth, u => { off(); resolve(u); });
+  });
+  if(!user) await signInAnonymously(auth);
+}
+
 async function onGateSubmit(){
   if(!checkAccessCode()){ renderGate('合言葉が違います'); return; }
   const name = document.getElementById('gateName').value.trim();
   if(!name){ renderGate('表示名を入力してください'); return; }
   root.innerHTML = `<div class="empty" style="margin-top:60px;">登録中…</div>`;
-  await signInAnonymously(auth);
+  await ensureAuth();
   const profileId = uid();
   const profile = { id: profileId, name, lat:null, lng:null, createdAt: Date.now() };
   await setDoc(doc(db,'profiles',profileId), profile);
@@ -134,7 +143,7 @@ async function onGateRestore(){
   const code = document.getElementById('gateRestoreCode').value.trim();
   if(!code){ renderGate('マイページコードを入力してください'); return; }
   root.innerHTML = `<div class="empty" style="margin-top:60px;">確認中…</div>`;
-  await signInAnonymously(auth);
+  await ensureAuth();
   const snap = await getDoc(doc(db,'profiles',code));
   if(!snap.exists()){ gateMode='restore'; renderGate('そのコードは見つかりませんでした。入力内容をご確認ください'); return; }
   localStorage.setItem(LOCAL_KEY, code);
@@ -161,7 +170,7 @@ function showMyCodeNotice(code, isNew){
 async function boot(){
   const savedCode = localStorage.getItem(LOCAL_KEY);
   if(savedCode){
-    await signInAnonymously(auth);
+    await ensureAuth();
     const snap = await getDoc(doc(db,'profiles',savedCode));
     if(snap.exists()){ state.profile = snap.data(); startApp(); return; }
     localStorage.removeItem(LOCAL_KEY); // 無効なコードだったら忘れる
@@ -190,26 +199,41 @@ async function loadSubsidyMeta(){
 
 boot();
 
+// 管理者 = 許可リスト（Firestoreの config/adminEmails）に載ったGoogleアカウントでログインした人。
+// 登録済みかどうかは adminUsers/{authUid} の有無で判定する（旧・合言葉方式の admins は使わない）。
 async function checkAdminStatus(){
   try {
-    const snap = await getDoc(doc(db,'admins', auth.currentUser.uid));
+    const snap = await getDoc(doc(db,'adminUsers', auth.currentUser.uid));
     state.isAdmin = snap.exists();
     if(state.isAdmin) render();
   } catch(e) {
-    // firestore.rulesにadminsのmatchブロックがまだデプロイされていない環境では
+    // firestore.rulesにadminUsersのmatchブロックがまだデプロイされていない環境では
     // permission-deniedになる。管理者ではない状態として静かに扱う。
   }
 }
 
-async function adminLogin(secret){
+async function adminLogin(){
   state.adminLoginError = '';
   try {
-    await setDoc(doc(db,'admins', auth.currentUser.uid), { claim: secret, profileName: state.profile.name, registeredAt: Date.now() });
-    state.isAdmin = true;
+    const cred = await signInWithPopup(auth, new GoogleAuthProvider());
+    const email = cred.user.email || '';
+    try {
+      await setDoc(doc(db,'adminUsers', cred.user.uid), { email, profileName: state.profile.name, registeredAt: Date.now() });
+      state.isAdmin = true;
+    } catch(e) {
+      state.adminLoginError = `${email} は管理者として登録されていません`;
+      await adminLogout(false);
+    }
   } catch(e) {
-    state.adminLoginError = '合言葉が違います';
+    state.adminLoginError = (e && e.code==='auth/popup-closed-by-user') ? '' : 'Googleログインができませんでした（ポップアップがブロックされていないか確認してください）';
   }
   render();
+}
+
+async function adminLogout(rerender=true){
+  try { await signOut(auth); await signInAnonymously(auth); } catch(e) {}
+  state.isAdmin = false;
+  if(rerender) render();
 }
 
 function listenListings(){
@@ -803,6 +827,7 @@ function renderAdmin(){
     <div class="bar-chart" id="barChart"></div>
 
     ${state.isAdmin ? `
+      <p class="sub">管理者としてログイン中です。<button class="export-btn" id="adminLogoutBtn">ログアウト</button></p>
       <div class="section-title admin-section"><span>🔒 登録データ一覧</span><span class="rule"></span><button class="export-btn" id="expListings">CSVエクスポート</button></div>
       <div class="table-wrap"><table class="ledger" id="listingTable"></table></div>
 
@@ -823,12 +848,11 @@ function renderAdmin(){
     ` : `
       <div class="section-title admin-section"><span>🔒 管理者レポート</span><span class="rule"></span></div>
       <div class="admin-gate">
-        <p class="sub">管理者限定です。合言葉を入力してください。</p>
+        <p class="sub">管理者限定です。登録されたGoogleアカウント（市職員・事務局）でログインしてください。</p>
         <div class="row">
-          <input type="password" id="adminSecretInput" placeholder="管理者用の合言葉">
-          <button id="adminLoginBtn">認証する</button>
+          <button id="adminLoginBtn">Googleでログイン</button>
         </div>
-        <div class="geo-status">${state.adminLoginError}</div>
+        <div class="geo-status">${escapeHtml(state.adminLoginError)}</div>
       </div>
     `}
   `;
@@ -885,12 +909,12 @@ function renderAdmin(){
   });
 
   if(!state.isAdmin){
-    wrap.querySelector('#adminLoginBtn').onclick = () => adminLogin(wrap.querySelector('#adminSecretInput').value.trim());
-    wrap.querySelector('#adminSecretInput').addEventListener('keydown', e => { if(e.key==='Enter') adminLogin(wrap.querySelector('#adminSecretInput').value.trim()); });
+    wrap.querySelector('#adminLoginBtn').onclick = () => adminLogin();
     return wrap;
   }
 
   // ここから先（登録データ一覧・つながり一覧・レポート・チャット閲覧）は管理者限定
+  wrap.querySelector('#adminLogoutBtn').onclick = () => adminLogout();
   const dupSizes = duplicateGroupSizes(listings);
   wrap.querySelector('#listingTable').innerHTML = `<tr><th>種別</th><th>内容</th><th>分類</th><th>登録者</th><th>期限</th><th>状態</th><th>登録日時</th></tr>` +
     (listings.map(l => `<tr><td>${l.mode==='need'?'困りごと':'できること'}</td><td>${renderContentCell(l, dupSizes[l.id])}</td><td>${escapeHtml(l.kind)}・${escapeHtml(l.subcat)}</td><td>${escapeHtml(l.userName)}</td><td>${l.deadline || '-'}</td><td><span class="pill ${l.status==='open'?'open':'connected'}">${l.status==='open'?'募集中':'成立'}</span></td><td>${fmtTime(l.createdAt)}</td></tr>`).join('') || `<tr><td colspan="7">データがありません</td></tr>`);
