@@ -265,7 +265,13 @@ async function adminLogin(){
     const cred = await signInWithPopup(auth, new GoogleAuthProvider());
     const email = cred.user.email || '';
     try {
-      await setDoc(doc(db,'adminUsers', cred.user.uid), { email, profileName: state.profile.name, registeredAt: Date.now() });
+      // 同じGoogleアカウントのuidは、どの端末でも同じ。すでに登録済みなら、そのまま管理者にする
+      // （adminUsersは作成だけ許可されていて、更新はルールで拒否されるため、再度setDocしてはいけない）。
+      const ref = doc(db,'adminUsers', cred.user.uid);
+      const existing = await getDoc(ref);
+      if(!existing.exists()){
+        await setDoc(ref, { email, profileName: state.profile.name, registeredAt: Date.now() });
+      }
       state.isAdmin = true;
     } catch(e) {
       state.adminLoginError = `${email} は管理者として登録されていません`;
